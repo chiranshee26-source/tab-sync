@@ -1,7 +1,9 @@
 import { useLayoutEffect } from 'react';
 import { applyToDocument } from '../preferences';
+import { applyPalette } from '../theme';
 import { isoDate } from '../schema';
 import { TabDot } from './components/common';
+import { useImageUrl } from './hooks';
 import { Icon, type IconName } from './icons';
 import { WHAT, useModel, type SyncState } from './model';
 import { href, useRoute, type Page } from './router';
@@ -34,8 +36,12 @@ export function App() {
   const prefs = store.prefs;
   const route = useRoute();
 
+  const { image, palette } = store.appearance;
+  const backdrop = useImageUrl(image);
+
   useLayoutEffect(() => {
     applyToDocument(prefs);
+    applyPalette(palette);
     document.title = `Daybook · ${t(NAV.find((item) => item.page === route.page)!.label)}`;
   });
 
@@ -47,7 +53,8 @@ export function App() {
   const tabCount = store.peerStates.filter((peer) => !peer.outdated).length + 1;
 
   return (
-    <div className="shell">
+    <div className="shell" data-page={route.page} data-backdrop={backdrop ? '' : undefined}>
+      {backdrop && <div className="backdrop" style={{ backgroundImage: `url(${backdrop})` }} aria-hidden="true" />}
       <aside className="sidebar">
         <a className="brand" href={href('today')}>
           <span className="logo">
@@ -72,9 +79,7 @@ export function App() {
         <div className="sidebar-footer">
           <a className="sync-pill" data-state={state} href={href('settings')} role="status">
             <span className="sync-dot" />
-            <span>
-              {t(STATUS_LABEL[state])} · {tabCount}
-            </span>
+            <span>{state === 'alone' ? t('openTabsCount', { count: '1' }) : `${t(STATUS_LABEL[state])} · ${tabCount}`}</span>
           </a>
           <button
             type="button"

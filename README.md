@@ -6,6 +6,34 @@ Daybook is a personal workspace that combines **tasks, a reading list, notes and
 
 It was built for the *Multi-Tab Settings Synchronization* task. The required preferences (a **dark-mode toggle**, a **language selector** and a **font-size slider**) live under *Settings & sync*. The same sync engine also carries all the user's data, which gives the app a real reason to be open in several tabs.
 
+## Design
+
+Daybook is styled as a warm **autumn almanac**:
+- **Palette:** paper, espresso, rust, ochre and olive.
+- **Type:** Fraunces, a soft serif, for headings and writing; Instrument Sans for the interface. Both are self-hosted.
+- **Texture:** a faint paper grain over everything.
+
+The **home page** is the showpiece. Its hero is an illustration of the *actual time of day*:
+- The sun (or a crescent moon) travels along an arc, the sky shifts from dawn to golden hour to dusk to night, and leaves drift over layered autumn hills.
+- Under it sit today's date in a large serif, the day of the year, and the time of day.
+
+Below the hero are reasons to come back every day:
+- a ruled journal page with a mood picker and word count
+- your week of moods
+- a writing streak
+- *On this day* memories ("A week ago today you wrote…")
+
+The other pages use the same palette but stay calm and functional.
+
+### Your picture, your colours
+
+Under *Settings & sync → Background & colours*, pick or drop any photo. It becomes the home-page hero and a soft, blurred backdrop behind every other page, and **the whole interface adopts its colours**, in light and dark mode:
+
+1. **Extract.** The picture is shrunk to 96 px and its pixels are clustered with k-means in **OKLab**, a perceptual colour space. The dominant cluster becomes the *base*; the most vivid cluster that covers a meaningful part of the picture (chroma × √coverage) becomes the *accent* (`src/color.ts`).
+2. **Derive.** Light and dark token sets are built in **OKLCH**. They keep the picture's hues but set lightness and chroma deliberately, then nudge lightness until every text/background pair meets WCAG contrast (text ≥ 7:1, muted text and accent ≥ 4.5:1). Status colours stay green, amber and red. Unit tests check this for blue, almost-white, almost-black, garish and autumn pictures.
+3. **Store and sync.** The resized picture goes to **IndexedDB**, named by a SHA-256 of its contents. The synced document only holds an `appearance` record with that id and the colour seeds, both stamped with one timestamp so concurrent changes never mix one tab's picture with another's colours. Every tab switches at once.
+4. **No flash.** The inline boot script applies the derived colours before first paint, just like the theme.
+
 ## What you can do
 
 | Section | Features |
@@ -15,7 +43,7 @@ It was built for the *Multi-Tab Settings Synchronization* task. The required pre
 | **Reading list** | Save articles or books (with optional links), move them through *To read → Reading → Finished*, filter by status |
 | **Notes** | Searchable list and editor; **open any note in its own tab**; see "Also open in tab …" when another tab has it open |
 | **Diary** | One page per day with a mood picker, previous/next-day navigation, and a list of past entries |
-| **Settings & sync** | Dark mode, 7 languages (English, Español, Français, Deutsch, हिन्दी, 日本語, العربية with right-to-left layout), font size 12–24 px, reset to defaults; live sync status, latency, open tabs and what each is viewing, concurrent-edit test, activity log |
+| **Settings & sync** | Background picture with extracted colour theme; dark mode, 7 languages (English, Español, Français, Deutsch, हिन्दी, 日本語, العربية with right-to-left layout), font size 12–24 px, reset to defaults; live sync status, latency, open tabs and what each is viewing, concurrent-edit test, activity log |
 
 Sync is visible in the UI:
 - When another tab changes something, a toast names the tab, and the changed item briefly highlights.
@@ -49,14 +77,17 @@ Stack: TypeScript (strict), React 18, Vite. The sync engine has no dependencies.
 ```
 src/
 ├── preferences.ts  Preference fields, defaults, validators, applyToDocument()
-├── schema.ts       Record kinds (prefs, task, reading, note, diary), field validators, ids
+├── schema.ts       Record kinds (prefs, appearance, task, reading, note, diary), validators, ids
+├── color.ts        OKLab/OKLCH maths, k-means palette extraction, contrast-safe theme derivation
+├── theme.ts        Applies derived colour tokens (boot script and app)
+├── images.ts       Background pictures: resize, hash, store in IndexedDB
 ├── clock.ts        Hybrid Logical Clock + total ordering of timestamps
 ├── lww.ts          LWW-map CRDT over records: merge, validation, serialization, fingerprint
 ├── transport.ts    BroadcastChannel transport (storage-event fallback) + message validation
 ├── persistence.ts  localStorage read-merge-write under a Web Lock; v1 → v2 migration
 ├── store.ts        SyncedStore: clock + CRDT + transport + persistence + presence
 ├── boot.ts         Inlined into <head> at build time; applies saved prefs before first paint
-├── i18n.ts         116 strings × 7 languages (type-checked for completeness)
+├── i18n.ts         140 strings × 7 languages (type-checked for completeness)
 ├── main.tsx        Wiring and page lifecycle (pagehide, pageshow, visibilitychange, routing)
 └── app/            React UI: model (toasts, log, latency, status), router, pages, components
 ```
@@ -69,6 +100,7 @@ Everything lives in one document, a map of **records**:
 
 ```
 prefs                → { theme, language, fontSize }
+appearance           → { image, palette }          (picture id + colour seeds)
 task:<id>            → { title, done, due, createdAt, deleted }
 reading:<id>         → { title, url, status, createdAt, deleted }
 note:<id>            → { title, body, createdAt, updatedAt, deleted }
@@ -116,7 +148,7 @@ Because the merge is **commutative, associative and idempotent**, tabs that have
 
 ## Tests
 
-- **Unit (Vitest, 35 tests):**
+- **Unit (Vitest, 47 tests):**
   - HLC monotonicity and causality
   - CRDT merge laws (randomized), delivery-order convergence, tombstones
   - Validation and v1 migration
@@ -124,7 +156,8 @@ Because the merge is **commutative, associative and idempotent**, tabs that have
   - Persistence, handshake, skewed clocks, conflict reporting, presence (including throttled background tabs and per-tab views)
   - Self-repair after a dropped message, round-trip latency, version detection
   - Caret adjustment
-- **End-to-end (Playwright, 12 tests with real Chromium tabs sharing one browser context):**
+  - Colour: OKLab round trips, contrast, palette extraction, readable themes from extreme pictures
+- **End-to-end (Playwright, 13 tests with real Chromium tabs sharing one browser context):**
   - Propagation under 100 ms
   - Language/RTL/font-size sync through the UI
   - Persistence of preferences and data after closing every tab
@@ -137,6 +170,7 @@ Because the merge is **commutative, associative and idempotent**, tabs that have
   - Toasts, highlight and in-sync status
   - Reset across tabs
   - Lone-tab prompt and latency display
+  - A background picture becoming the theme in every tab, applied before first paint after reload
 
 ## Deployment
 
@@ -147,4 +181,4 @@ The build is fully static, with relative asset paths and hash routing, so it wor
 ## Browser support and limits
 
 - Works in current Chrome, Edge, Firefox and Safari.
-- Data is stored in the browser (`localStorage`, about 5 MB per site). It syncs between tabs of the **same browser profile and the same address**. It does not sync across devices, browsers, or between private and normal windows.
+- Data is stored in the browser: `localStorage` (about 5 MB per site) for records, IndexedDB for pictures. It syncs between tabs of the **same browser profile and the same address**. It does not sync across devices, browsers, or between private and normal windows.

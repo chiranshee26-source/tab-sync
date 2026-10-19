@@ -26,6 +26,7 @@ export const WHAT: Record<Kind, MessageKey> = {
   reading: 'whatReading',
   note: 'whatNotes',
   diary: 'whatDiary',
+  appearance: 'whatAppearance',
 };
 
 export interface LogEntry {

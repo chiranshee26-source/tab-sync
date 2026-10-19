@@ -133,6 +133,16 @@ export class SyncedStore {
     return this.doc[key] ? recordValues(this.doc, kind, key) : undefined;
   }
 
+  get appearance(): RecordTypes['appearance'] {
+    return recordValues(this.doc, 'appearance', 'appearance');
+  }
+
+  setAppearance(appearance: RecordTypes['appearance']): void {
+    // Both fields share one timestamp, so concurrent changes from two tabs
+    // resolve to the same tab's picture *and* palette, never a mix.
+    this.write('appearance', { ...appearance }, true);
+  }
+
   /** All records of a kind, without deleted ones. */
   list<K extends ItemKind>(kind: K): (RecordTypes[K] & { id: string })[] {
     const prefix = `${kind}:`;
@@ -198,10 +208,12 @@ export class SyncedStore {
     this.write('prefs', { ...this.options.defaults });
   }
 
-  private write(key: string, fields: Record<string, unknown>): void {
+  /** `together`: stamp every given field, even unchanged ones, so they win or lose as a unit. */
+  private write(key: string, fields: Record<string, unknown>, together = false): void {
     const current = this.doc[key] ?? {};
-    const changed = Object.entries(fields).filter(([field, value]) => current[field]?.value !== value);
-    if (changed.length === 0) return;
+    const differs = Object.entries(fields).some(([field, value]) => current[field]?.value !== value);
+    if (!differs) return;
+    const changed = Object.entries(fields).filter(([field, value]) => together || current[field]?.value !== value);
     const ts = this.clock.now();
     const record: Record<string, Entry> = {};
     for (const [field, value] of changed) record[field] = { value, ts };

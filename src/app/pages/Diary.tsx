@@ -50,7 +50,7 @@ export function DiaryEditor({ date, rows = 12 }: { date: string; rows?: number }
       <MoodPicker date={date} />
       <SyncedTextarea
         key={date}
-        className="diary-body"
+        className="journal-page"
         rows={rows}
         placeholder={t('diaryPlaceholder')}
         aria-label={t('diaryPlaceholder')}

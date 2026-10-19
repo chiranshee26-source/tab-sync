@@ -1,54 +1,70 @@
+/*
+ * Daybook — autumn almanac theme.
+ * Default tokens are hand-tuned; a background picture overrides the colour
+ * tokens with ones derived from it (see color.ts / theme.ts).
+ */
+
 :root {
   --font-size: 16px;
-  --bg: #f3f4f8;
-  --bg-accent: radial-gradient(60rem 30rem at 10% -10%, #dfe7ff 0%, transparent 60%);
-  --surface: #ffffff;
-  --surface-2: #f1f3f8;
-  --surface-3: #e7eaf2;
-  --border: #e1e5ee;
-  --text: #141a26;
-  --muted: #5d6779;
-  --accent: #2c5bdc;
-  --accent-hover: #2350c8;
-  --accent-text: #ffffff;
-  --accent-soft: #e6edfd;
-  --success: #12804a;
-  --success-soft: #e3f5ea;
-  --warning: #9a5800;
-  --warning-soft: #fdf1dc;
-  --danger: #c4302b;
-  --danger-soft: #fde8e7;
-  --dot-lightness: 52%;
-  --shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 6px 20px rgb(16 24 40 / 0.06);
-  --shadow-lg: 0 10px 30px rgb(16 24 40 / 0.16);
-  --radius: 1rem;
-  --radius-sm: 0.625rem;
+  --font-display: 'Fraunces Variable', 'Iowan Old Style', Georgia, 'Noto Serif', serif;
+  --font-ui: 'Instrument Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans',
+    'Noto Sans Arabic', 'Noto Sans Devanagari', 'Noto Sans JP', sans-serif;
+
+  --bg: #f3ebde;
+  --surface: #fbf7f0;
+  --surface-2: #f2e9db;
+  --surface-3: #e8dcc9;
+  --border: #e3d5c0;
+  --text: #2b2119;
+  --muted: #76675a;
+  --accent: #b14f27;
+  --accent-hover: #963f1c;
+  --accent-text: #fff8ef;
+  --accent-soft: #f4dfcf;
+  --hero-ink: #fffaf3;
+  --hero-shade: #2a1d15;
+
+  --success: #5b7333;
+  --success-soft: #e7ead2;
+  --warning: #9c6a12;
+  --warning-soft: #f6e8c6;
+  --danger: #a23a2a;
+  --danger-soft: #f6dcd4;
+  --dot-lightness: 50%;
+  --grain-opacity: 0.5;
+  --grain-blend: multiply;
+  --shadow: 0 1px 2px rgb(60 40 20 / 0.06), 0 10px 28px -14px rgb(60 40 20 / 0.22);
+  --shadow-lg: 0 18px 40px -16px rgb(40 25 12 / 0.45);
+  --radius: 1.125rem;
+  --radius-sm: 0.75rem;
   color-scheme: light;
   font-size: var(--font-size);
 }
 
 :root[data-theme='dark'] {
-  --bg: #0c0f16;
-  --bg-accent: radial-gradient(60rem 30rem at 10% -10%, #172447 0%, transparent 60%);
-  --surface: #151a24;
-  --surface-2: #1c2230;
-  --surface-3: #252c3c;
-  --border: #283044;
-  --text: #e9ecf3;
-  --muted: #98a2b6;
-  --accent: #7fa3ff;
-  --accent-hover: #9ab6ff;
-  --accent-text: #0c0f16;
-  --accent-soft: #1d2a4b;
-  --success: #4fd08e;
-  --success-soft: #133325;
-  --warning: #f3b65c;
-  --warning-soft: #3a2a12;
-  --danger: #ff8a80;
-  --danger-soft: #3d1b1a;
+  --bg: #1b1511;
+  --surface: #241c16;
+  --surface-2: #2c231c;
+  --surface-3: #372b22;
+  --border: #3b2f25;
+  --text: #f2e8db;
+  --muted: #b5a492;
+  --accent: #e3905f;
+  --accent-hover: #eda57a;
+  --accent-text: #1b1511;
+  --accent-soft: #3f2a1e;
+
+  --success: #a7bb72;
+  --success-soft: #29301e;
+  --warning: #e2b462;
+  --warning-soft: #3a2d15;
+  --danger: #e8846f;
+  --danger-soft: #3d211b;
   --dot-lightness: 65%;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.25);
-  --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.5);
+  --grain-opacity: 0.35;
+  --grain-blend: soft-light;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 30px -14px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 18px 40px -16px rgb(0 0 0 / 0.7);
   color-scheme: dark;
 }
 
@@ -57,12 +73,13 @@
 :root.ready .button,
 :root.ready .select,
 :root.ready .switch,
+:root.ready .sidebar,
 :root.ready .setting-icon,
 :root.ready .status-hero {
   transition:
-    background-color 0.25s ease,
-    border-color 0.25s ease,
-    color 0.25s ease;
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease;
 }
 
 *,
@@ -82,30 +99,43 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg-accent), var(--bg);
-  background-repeat: no-repeat;
+  background: var(--bg);
   color: var(--text);
-  font-family:
-    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Devanagari',
-    'Noto Sans JP', sans-serif;
-  line-height: 1.5;
+  font-family: var(--font-ui);
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Paper grain over the whole app: subtle, printed-feeling texture. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.25 0 0 0 0 0.15 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 h1,
 h2,
 h3 {
   margin: 0;
-  line-height: 1.25;
+  line-height: 1.2;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-optical-sizing: auto;
 }
 
 h1 {
-  font-size: 1.625rem;
-  letter-spacing: -0.015em;
+  font-size: 2.25rem;
+  letter-spacing: -0.02em;
 }
 
 h2 {
-  font-size: 1.0625rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
 }
 
 .icon {
@@ -347,8 +377,8 @@ a.icon-button {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5625rem 1rem;
-  border-radius: var(--radius-sm);
+  padding: 0.5625rem 1.125rem;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text);
@@ -845,9 +875,11 @@ a.icon-button {
 }
 
 .brand-name {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-size: 1.625rem;
+  font-style: italic;
+  font-weight: 560;
+  letter-spacing: -0.02em;
 }
 
 .nav {
@@ -992,8 +1024,8 @@ a.icon-button {
 }
 
 .page-header h1 {
-  font-size: 1.75rem;
-  letter-spacing: -0.015em;
+  font-size: 2.5rem;
+  letter-spacing: -0.025em;
 }
 
 .page-actions {
@@ -1004,10 +1036,6 @@ a.icon-button {
 .subtitle {
   margin: 0.25rem 0 0;
   color: var(--muted);
-}
-
-.today-hero h1 {
-  font-size: 2rem;
 }
 
 .eyebrow {
@@ -1049,9 +1077,16 @@ a.icon-button {
   font-variant-numeric: tabular-nums;
 }
 
-.dashboard {
+.today-top {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+.today-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
@@ -1422,6 +1457,11 @@ a.reading-title:hover {
   gap: 0.125rem;
 }
 
+.note-links li,
+.entry-links li {
+  min-width: 0;
+}
+
 .note-links a,
 .entry-links a {
   position: relative;
@@ -1620,7 +1660,7 @@ a.reading-title:hover {
 /* ---------- Responsive ---------- */
 
 @media (max-width: 64rem) {
-  .dashboard,
+  .today-grid,
   .settings-layout,
   .diary-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -1726,6 +1766,475 @@ a.reading-title:hover {
   .actions .button {
     flex: 1 1 auto;
     justify-content: center;
+  }
+}
+
+/* ---------- Home: almanac hero ---------- */
+
+.hero {
+  position: relative;
+  min-height: clamp(20rem, 52vh, 30rem);
+  border-radius: calc(var(--radius) * 1.5);
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--hero-shade);
+  box-shadow: var(--shadow-lg);
+  color: var(--hero-ink);
+}
+
+.almanac,
+.hero-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -2;
+}
+
+.hero-photo {
+  animation: hero-in 1.2s ease-out both;
+}
+
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+
+.star {
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+
+.star:nth-child(3n) {
+  animation-delay: -1.3s;
+}
+
+.star:nth-child(3n + 1) {
+  animation-delay: -2.6s;
+}
+
+@keyframes twinkle {
+  to {
+    opacity: 0.15;
+  }
+}
+
+/* Keeps the text readable over any picture or time of day. */
+.hero-scrim {
+  --scrim-side: right;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--hero-shade) 62%, transparent) 0%, transparent 42%),
+    linear-gradient(to var(--scrim-side), color-mix(in srgb, var(--hero-shade) 42%, transparent), transparent 55%);
+}
+
+:root[dir='rtl'] .hero-scrim {
+  --scrim-side: left;
+}
+
+/* Photos vary wildly in brightness; give them a little more shade. */
+.hero[data-photo] .hero-scrim {
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--hero-shade) 78%, transparent) 0%, transparent 55%),
+    linear-gradient(to var(--scrim-side), color-mix(in srgb, var(--hero-shade) 45%, transparent), transparent 60%);
+}
+
+.hero-content {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  padding: 2rem 2.5rem 2.25rem;
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.25);
+}
+
+.hero-greeting {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-style: italic;
+  font-weight: 400;
+  opacity: 0.92;
+}
+
+.hero-date {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font-weight: 500;
+  line-height: 0.95;
+}
+
+.hero-weekday {
+  font-size: clamp(3rem, 8vw, 5.75rem);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  font-variation-settings: 'SOFT' 100, 'WONK' 1;
+}
+
+.hero-daymonth {
+  margin-top: 0.375rem;
+  font-size: clamp(1.5rem, 3.4vw, 2.375rem);
+  letter-spacing: -0.02em;
+  font-weight: 450;
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+/* Falling leaves */
+.leaves {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.leaf {
+  position: absolute;
+  top: -2rem;
+  left: var(--left);
+  width: var(--size);
+  height: var(--size);
+  animation: leaf-fall var(--duration) linear var(--delay) infinite;
+  opacity: 0.85;
+}
+
+.leaf svg {
+  width: 100%;
+  height: 100%;
+  animation: leaf-sway calc(var(--duration) / 4) ease-in-out var(--delay) infinite alternate;
+}
+
+@keyframes leaf-fall {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-6rem, 34rem, 0);
+  }
+}
+
+@keyframes leaf-sway {
+  from {
+    transform: translateX(-1.25rem) rotate(-35deg);
+  }
+  to {
+    transform: translateX(1.25rem) rotate(40deg);
+  }
+}
+
+.hero[data-phase='night'] .leaf {
+  opacity: 0.45;
+}
+
+/* ---------- Home: journal, week, memories ---------- */
+
+.journal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.journal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.journal-head .mood-picker {
+  margin: 0;
+}
+
+/* Ruled notebook paper with a margin line; the lines scroll with the text. */
+.journal-page {
+  --line: 2rem;
+  flex: 1;
+  width: 100%;
+  min-height: calc(var(--line) * 7);
+  padding: 0 0.25rem 0 2.25rem;
+  padding-inline: 2.25rem 0.25rem;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image:
+    linear-gradient(to right, transparent 1.5rem, color-mix(in srgb, var(--accent) 35%, transparent) 1.5rem,
+      color-mix(in srgb, var(--accent) 35%, transparent) calc(1.5rem + 1px), transparent calc(1.5rem + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--line) - 1px), var(--border) calc(var(--line) - 1px), var(--border) var(--line));
+  background-attachment: local;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 1.1875rem;
+  font-weight: 380;
+  line-height: var(--line);
+  resize: vertical;
+  outline: none;
+}
+
+:root[dir='rtl'] .journal-page {
+  background-image:
+    linear-gradient(to left, transparent 1.5rem, color-mix(in srgb, var(--accent) 35%, transparent) 1.5rem,
+      color-mix(in srgb, var(--accent) 35%, transparent) calc(1.5rem + 1px), transparent calc(1.5rem + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--line) - 1px), var(--border) calc(var(--line) - 1px), var(--border) var(--line));
+}
+
+.journal-page::placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.journal-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.week {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mood-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mood-week a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mood-week a:hover {
+  background: var(--surface-2);
+}
+
+.mood-week a[aria-current='date'] {
+  color: var(--accent);
+}
+
+.mood-week-dot {
+  display: grid;
+  place-items: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border);
+  font-size: 1.125rem;
+}
+
+.mood-week-dot[data-filled] {
+  border: 0;
+  background: var(--accent-soft);
+}
+
+.mood-week a[aria-current='date'] .mood-week-dot {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.streak {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.streak .icon {
+  color: var(--accent);
+}
+
+.memory {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-sm);
+  border-inline-start: 3px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.memory:hover {
+  background: var(--surface-3);
+}
+
+.memory-text {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+
+/* ---------- Appearance (background picture) ---------- */
+
+.appearance {
+  position: relative;
+}
+
+.appearance[data-dragging] {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}
+
+.appearance-preview {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0 0.25rem;
+}
+
+.appearance-thumb {
+  width: 6.5rem;
+  height: 4.5rem;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: var(--shadow);
+}
+
+.appearance-thumb-default {
+  background:
+    radial-gradient(circle at 70% 35%, #fff1dc 0 10%, transparent 11%),
+    linear-gradient(to bottom, transparent 55%, #4a3528 55%),
+    linear-gradient(to bottom, transparent 42%, #b9805f 42%),
+    linear-gradient(#e7b07a, #f6dcaa);
+}
+
+.appearance-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.swatches {
+  display: flex;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.swatches li {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.12),
+    0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+.file-button {
+  position: relative;
+  cursor: pointer;
+}
+
+.file-button[aria-disabled] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.file-button:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+/* Soft, blurred copy of the picture behind every page. */
+.backdrop {
+  position: fixed;
+  inset: -4rem;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.15);
+  opacity: 0.32;
+}
+
+:root[data-theme='dark'] .backdrop {
+  opacity: 0.38;
+}
+
+.shell {
+  position: relative;
+  isolation: isolate;
+}
+
+/* With a picture behind the page, let a little of it show through the cards. */
+.shell[data-backdrop] .card,
+.shell[data-backdrop] .sidebar {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+@media (max-width: 64rem) {
+  .today-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 48rem) {
+  .hero {
+    min-height: 22rem;
+    border-radius: var(--radius);
+  }
+
+  .hero-content {
+    padding: 1.5rem 1.25rem 1.5rem;
+  }
+
+  .journal-page {
+    font-size: 1.0625rem;
   }
 }
 

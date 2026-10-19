@@ -120,7 +120,7 @@ test('preferences saved by the first version are migrated', async ({ context }) 
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('html')).toHaveAttribute('lang', 'de');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Guten|Guten Tag|Guten Abend/);
+  await expect(page.locator('.hero-greeting')).toHaveText(/^Guten (Morgen|Tag|Abend)$/);
 });
 
 // ---------- Conflict resolution ----------
@@ -242,4 +242,64 @@ test('sync panel: lone-tab prompt and latency explanation', async ({ context }) 
   await expect(a.locator('.metric-value').first()).toHaveText(/ms$/);
   await expect(b.locator('.metrics-empty')).toContainText('Change something in this tab');
   await expect(b.locator('.update-banner')).toHaveCount(0);
+});
+
+test('a background picture becomes the theme in every tab, and before first paint after reload', async ({
+  context,
+}) => {
+  const [a] = await openTabs(context, 1, '#/settings');
+  await english(a);
+  const [b] = await openTabs(context, 1);
+  const defaultAccent = await b.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'));
+
+  // A synthetic "blue hour over a lake" picture.
+  const png = await a.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 800;
+    canvas.height = 500;
+    const g = canvas.getContext('2d')!;
+    const sky = g.createLinearGradient(0, 0, 0, 300);
+    sky.addColorStop(0, '#1d2b4f');
+    sky.addColorStop(1, '#4f6b9a');
+    g.fillStyle = sky;
+    g.fillRect(0, 0, 800, 300);
+    g.fillStyle = '#12192b';
+    g.fillRect(0, 300, 800, 200);
+    g.fillStyle = '#e8a87c';
+    g.fillRect(560, 220, 90, 80);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  await a.locator('input[type=file]').setInputFiles({
+    name: 'lake.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(png, 'base64'),
+  });
+
+  await expect(a.locator('.swatches li')).not.toHaveCount(0);
+  await expect(a.getByText('Colours from your picture')).toBeVisible();
+  // The other tab adopts the palette and shows the picture as its hero.
+  await expect(b.locator('html')).toHaveAttribute('data-custom-palette', '');
+  await expect(b.locator('.hero-photo')).toBeVisible();
+  const accent = await b.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'));
+  expect(accent).not.toBe(defaultAccent);
+
+  // A fresh tab has the picture's colours before <body> exists.
+  const fresh = await context.newPage();
+  await fresh.addInitScript(() => {
+    new MutationObserver((_, observer) => {
+      if (document.body) {
+        (window as unknown as { accentAtBody: string }).accentAtBody = getComputedStyle(
+          document.documentElement,
+        ).getPropertyValue('--accent');
+        observer.disconnect();
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  await fresh.goto('/');
+  expect(await fresh.evaluate(() => (window as unknown as { accentAtBody: string }).accentAtBody)).toBe(accent);
+
+  // Back to the default theme everywhere.
+  await a.getByRole('button', { name: 'Back to autumn' }).click();
+  await expect(b.locator('html')).not.toHaveAttribute('data-custom-palette', '');
+  await expect(b.locator('.almanac')).toBeVisible();
 });

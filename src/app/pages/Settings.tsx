@@ -3,6 +3,7 @@ import { LANGUAGE_NAMES, type MessageKey } from '../../i18n';
 import { FONT_SIZE, LANGUAGES } from '../../preferences';
 import { RACE_DELAY_MS } from '../../store';
 import { NAV } from '../App';
+import { AppearanceCard } from '../components/AppearanceCard';
 import { Flash, PageHeader, TabDot } from '../components/common';
 import { formatTime } from '../format';
 import { Icon } from '../icons';
@@ -327,9 +328,12 @@ export function SettingsPage() {
       <div className="settings-layout">
         <div className="column">
           <Preferences />
+          <AppearanceCard />
+        </div>
+        <div className="column">
+          <SyncPanel />
           <ActivityLog />
         </div>
-        <SyncPanel />
       </div>
     </>
   );
