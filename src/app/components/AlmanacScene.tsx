@@ -5,7 +5,9 @@
  * grain, in the spirit of a risograph poster.
  */
 
-export type Phase = 'night' | 'dawn' | 'day' | 'golden' | 'dusk';
+import { phaseAt, skyProgress, type Phase, type SunTimes } from '../sun';
+
+export type { Phase };
 
 interface PhaseColours {
   sky: [string, string, string];
@@ -53,20 +55,9 @@ const COLOURS: Record<Phase, PhaseColours> = {
   },
 };
 
-export function phaseOf(date: Date): Phase {
-  const h = date.getHours() + date.getMinutes() / 60;
-  if (h < 5 || h >= 20.5) return 'night';
-  if (h < 7.5) return 'dawn';
-  if (h < 16) return 'day';
-  if (h < 18.5) return 'golden';
-  return 'dusk';
-}
-
-/** Position on the sky arc: the sun from 06:00 to 19:30, the moon the rest of the time. */
-function celestialPosition(date: Date): { x: number; y: number; isSun: boolean } {
-  const h = date.getHours() + date.getMinutes() / 60;
-  const isSun = h >= 6 && h < 19.5;
-  const t = isSun ? (h - 6) / 13.5 : ((h - 19.5 + 24) % 24) / 10.5;
+/** Position on the sky arc, following the real sunrise and sunset. */
+function celestialPosition(now: Date, sun: SunTimes | null): { x: number; y: number; isSun: boolean } {
+  const { t, isSun } = skyProgress(now, sun);
   return { x: 110 + t * 980, y: 440 - Math.sin(Math.PI * t) * 330, isSun };
 }
 
@@ -89,10 +80,10 @@ function Tree({ x, y, size, colour, trunk }: { x: number; y: number; size: numbe
   );
 }
 
-export function AlmanacScene({ now }: { now: Date }) {
-  const phase = phaseOf(now);
+export function AlmanacScene({ now, sun }: { now: Date; sun: SunTimes | null }) {
+  const phase = phaseAt(now, sun);
   const c = COLOURS[phase];
-  const { x, y, isSun } = celestialPosition(now);
+  const { x, y, isSun } = celestialPosition(now, sun);
   const trunk = c.hills[3];
 
   return (

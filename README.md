@@ -43,6 +43,7 @@ Daybook is styled as a warm **autumn almanac**:
 
 The **home page** is the showpiece. Its hero is an illustration of the *actual time of day*:
 - The sun (or a crescent moon) travels along an arc, the sky shifts from dawn to golden hour to dusk to night, and leaves drift over layered autumn hills.
+- Dawn, golden hour and dusk follow the **real sunrise and sunset** for today. They are computed with the NOAA solar-position formulas (`src/app/sun.ts`) for a location estimated from the device's time zone, so no location permission is needed.
 - Under it sit today's date in a large serif, the day of the year, and the time of day.
 
 Below the hero are reasons to come back every day:
@@ -351,7 +352,7 @@ Right after loading, the tab announces itself with `hello`, and peers reply with
 
 ## Tests
 
-- **Unit (Vitest, 47 tests):**
+- **Unit (Vitest, 59 tests):**
   - HLC monotonicity and causality
   - CRDT merge laws (randomized), delivery-order convergence, tombstones
   - Validation and v1 migration
@@ -359,6 +360,7 @@ Right after loading, the tab announces itself with `hello`, and peers reply with
   - Persistence, handshake, skewed clocks, conflict reporting, presence (including throttled background tabs and per-tab views)
   - Self-repair after a dropped message, round-trip latency, version detection
   - Caret adjustment
+  - Sunrise/sunset against published times (Chennai, London, polar night) and the time-of-day phases
   - Colour: OKLab round trips, contrast, palette extraction, readable themes from extreme pictures
 - **End-to-end (Playwright, 14 tests with real Chromium tabs sharing one browser context):**
   - Propagation under 100 ms

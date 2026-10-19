@@ -1,6 +1,6 @@
 import type { MessageKey } from '../../i18n';
 import { isoDate, type DiaryEntry } from '../../schema';
-import { AlmanacScene, FallingLeaves, phaseOf, type Phase } from '../components/AlmanacScene';
+import { AlmanacScene, FallingLeaves } from '../components/AlmanacScene';
 import { EmptyState, Flash } from '../components/common';
 import { SyncedTextarea } from '../components/SyncedText';
 import { formatRelative, parseIsoDate, shiftDate } from '../format';
@@ -8,6 +8,7 @@ import { useImageUrl, useNow } from '../hooks';
 import { Icon } from '../icons';
 import { useModel } from '../model';
 import { href } from '../router';
+import { estimateLocation, phaseAt, sunTimes, type Phase } from '../sun';
 import { MOOD_EMOJI, MoodPicker } from './Diary';
 import { createNote, snippet } from './Notes';
 import { ReadingRow } from './Reading';
@@ -41,12 +42,13 @@ function Hero() {
   const now = useNow();
   const language = store.prefs.language;
   const photo = useImageUrl(store.appearance.image);
-  const phase = phaseOf(now);
+  const sun = sunTimes(now, estimateLocation(now));
+  const phase = phaseAt(now, sun);
   const { day, total } = dayOfYear(now);
 
   return (
     <section className="hero" data-phase={phase} data-photo={photo ? '' : undefined}>
-      {photo ? <img className="hero-photo" src={photo} alt="" /> : <AlmanacScene now={now} />}
+      {photo ? <img className="hero-photo" src={photo} alt="" /> : <AlmanacScene now={now} sun={sun} />}
       {!photo && <FallingLeaves />}
       <div className="hero-scrim" />
       <div className="hero-content">
