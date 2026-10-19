@@ -18,6 +18,8 @@ A TypeScript web app that keeps user preferences (dark mode, language, font size
 - **Remote-change feedback**: when another tab changes a setting, a toast says which tab changed what, and the affected control briefly highlights. Slider drags update a single toast instead of stacking
 - **Colour-coded tabs**: each tab gets a stable colour, used in the tab list, activity log, toasts and field clocks
 - **Polished controls**: sun/moon switch, styled language picker, font slider with −/+ buttons and A/A scale, one-click **Reset to defaults**, and a live preview card
+- **Honest metrics**: latency is shown on the tab that sends a change; tabs that have only received changes explain how to get a measurement instead of showing empty values
+- **Update banner**: every message carries the build time of the sender's code, so a tab left open across a deploy sees "A newer version of this app is open in another tab" with a **Reload** button
 - **Progressive disclosure**: fingerprint, transport and per-field clocks sit in a collapsible "Technical details" section
 - **Accessible and responsive**: keyboard and screen-reader friendly (`role="switch"`, live regions, labelled buttons), right-to-left layout for Arabic, phone-sized layouts, `prefers-reduced-motion` respected
 
@@ -104,8 +106,8 @@ Defaults (system color scheme, browser language) carry the zero timestamp, so an
 
 ## Tests
 
-- **Unit (Vitest, 23 tests):** HLC monotonicity and causality; merge laws (randomized); delivery-order convergence; validation of corrupt input; store-level propagation, persistence, handshake, skewed clocks, conflict reporting, presence, reset, self-repair after a dropped message, clock-independent latency measurement, and presence for throttled background tabs.
-- **End-to-end (Playwright, 8 tests with real Chromium tabs sharing one browser context):** cross-tab propagation under 100 ms; language/RTL/font-size sync through the UI; persistence after closing every tab; no wrong-theme paint on a new tab; four tabs converging after the concurrent-edit test; toast, highlight and "in sync" status; reset across tabs; the single-tab prompt.
+- **Unit (Vitest, 24 tests):** HLC monotonicity and causality; merge laws (randomized); delivery-order convergence; validation of corrupt input; store-level propagation, persistence, handshake, skewed clocks, conflict reporting, presence, reset, self-repair after a dropped message, clock-independent latency measurement, and presence for throttled background tabs.
+- **End-to-end (Playwright, 9 tests with real Chromium tabs sharing one browser context):** cross-tab propagation under 100 ms; language/RTL/font-size sync through the UI; persistence after closing every tab; no wrong-theme paint on a new tab; four tabs converging after the concurrent-edit test; toast, highlight and "in sync" status; reset across tabs; the single-tab prompt.
 
 ## Deployment
 

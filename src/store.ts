@@ -57,12 +57,15 @@ export interface StoreOptions {
   isHidden?: () => boolean;
   random?: () => number;
   heartbeatMs?: number;
+  /** Build time of this tab's code (see vite.config.ts). */
+  build?: number;
 }
 
 interface Peer {
   lastSeen: number;
   fp?: string;
   hidden: boolean;
+  build?: number;
 }
 
 /** A visible tab that misses ~3 heartbeats is gone (closing a tab also sends `bye`). */
@@ -121,6 +124,12 @@ export class SyncedPreferences {
   get peerStates(): PeerState[] {
     const own = this.fingerprint;
     return [...this.peers].map(([id, peer]) => ({ id, inSync: peer.fp === own }));
+  }
+
+  /** True when another tab runs a newer deploy, so this one should reload. */
+  get newerBuildAvailable(): boolean {
+    const own = this.options.build ?? 0;
+    return [...this.peers.values()].some((peer) => (peer.build ?? 0) > own);
   }
 
   get transportKind(): string {
@@ -182,7 +191,7 @@ export class SyncedPreferences {
 
   private receive(message: SyncMessage): void {
     if (message.from === this.tabId) return;
-    this.touchPeer(message.from, message.fp, message.hidden ?? false);
+    this.touchPeer(message.from, message);
     switch (message.type) {
       case 'hello':
         this.post({ type: 'state', entries: this.doc });
@@ -280,7 +289,7 @@ export class SyncedPreferences {
     }, Math.max(0, at - this.wallNow()));
   }
 
-  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt' | 'fp' | 'hidden'>): void {
+  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt' | 'fp' | 'hidden' | 'build'>): void {
     this.ackQueued = false;
     this.options.transport.post({
       ...body,
@@ -288,12 +297,14 @@ export class SyncedPreferences {
       sentAt: this.now(),
       fp: this.fingerprint,
       hidden: this.isHidden(),
+      build: this.options.build,
     } as SyncMessage);
   }
 
-  private touchPeer(id: string, fp: string | undefined, hidden: boolean): void {
+  private touchPeer(id: string, message: SyncMessage): void {
     const previous = this.peers.get(id);
-    this.peers.set(id, { lastSeen: this.now(), fp: fp ?? previous?.fp, hidden });
+    const { fp, hidden = false, build } = message;
+    this.peers.set(id, { lastSeen: this.now(), fp: fp ?? previous?.fp, hidden, build });
     if (!previous) this.emitPeers([id], []);
     else if (fp && fp !== previous.fp) this.emitPeers([], []);
   }

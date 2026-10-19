@@ -28,6 +28,10 @@ export default defineConfig({
   // Relative asset URLs so the build works from any sub-path (e.g. GitHub Pages).
   base: './',
   plugins: [inlineBootScript()],
+  define: {
+    // Lets a tab notice that another tab runs a newer deploy (see store.ts).
+    __BUILD_TIME__: JSON.stringify(Date.now()),
+  },
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',

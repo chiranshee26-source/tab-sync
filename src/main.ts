@@ -13,6 +13,7 @@ const store = new SyncedPreferences({
   transport: createTransport(),
   persistence: new LocalStoragePersistence(),
   defaults: defaultPreferences(),
+  build: __BUILD_TIME__,
 });
 
 new SettingsView(document.getElementById('app')!, store);

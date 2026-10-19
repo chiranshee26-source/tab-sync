@@ -247,6 +247,16 @@ describe('SyncedPreferences', () => {
     [a, background, crashed].forEach((s) => s.stop());
   });
 
+  it('notices when another tab runs a newer deploy', () => {
+    const net = new Network();
+    const old = openTab(net, 'old', { build: 1 });
+    const fresh = openTab(net, 'new', { build: 2 });
+    expect(old.newerBuildAvailable).toBe(true);
+    expect(fresh.newerBuildAvailable).toBe(false);
+    old.stop();
+    fresh.stop();
+  });
+
   it('tracks peers joining and leaving', () => {
     const net = new Network();
     const a = openTab(net, 'a');

@@ -54,6 +54,9 @@ const en = {
   latencyTarget: 'Time for your changes to reach the other tabs (target: under 100 ms)',
   details: 'Technical details',
   dismiss: 'Dismiss',
+  noLatency: 'No measurements yet. Change a setting in this tab to measure how fast it reaches the others.',
+  updateAvailable: 'A newer version of this app is open in another tab.',
+  reload: 'Reload',
 };
 
 export type MessageKey = keyof typeof en;
@@ -115,6 +118,9 @@ const catalogs: Record<Language, Catalog> = {
     latencyTarget: 'Tiempo hasta que tus cambios llegan a las demás pestañas (objetivo: menos de 100 ms)',
     details: 'Detalles técnicos',
     dismiss: 'Cerrar',
+    noLatency: 'Aún no hay mediciones. Cambia un ajuste en esta pestaña para medir cuánto tarda en llegar a las demás.',
+    updateAvailable: 'Hay una versión más reciente de la app abierta en otra pestaña.',
+    reload: 'Recargar',
   },
   fr: {
     appTitle: 'Réglages synchronisés',
@@ -170,6 +176,9 @@ const catalogs: Record<Language, Catalog> = {
     latencyTarget: 'Temps pour que vos modifications atteignent les autres onglets (objectif : moins de 100 ms)',
     details: 'Détails techniques',
     dismiss: 'Fermer',
+    noLatency: 'Aucune mesure pour l’instant. Modifiez un réglage dans cet onglet pour mesurer le temps qu’il met à atteindre les autres.',
+    updateAvailable: 'Une version plus récente de l’application est ouverte dans un autre onglet.',
+    reload: 'Recharger',
   },
   de: {
     appTitle: 'Synchronisierte Einstellungen',
@@ -225,6 +234,9 @@ const catalogs: Record<Language, Catalog> = {
     latencyTarget: 'Zeit, bis deine Änderungen die anderen Tabs erreichen (Ziel: unter 100 ms)',
     details: 'Technische Details',
     dismiss: 'Schließen',
+    noLatency: 'Noch keine Messwerte. Ändere in diesem Tab eine Einstellung, um zu messen, wie schnell sie die anderen erreicht.',
+    updateAvailable: 'In einem anderen Tab ist eine neuere Version der App geöffnet.',
+    reload: 'Neu laden',
   },
   hi: {
     appTitle: 'टैब सिंक सेटिंग्स',
@@ -280,6 +292,9 @@ const catalogs: Record<Language, Catalog> = {
     latencyTarget: 'आपके बदलावों को अन्य टैब तक पहुँचने में लगा समय (लक्ष्य: 100 ms से कम)',
     details: 'तकनीकी विवरण',
     dismiss: 'बंद करें',
+    noLatency: 'अभी कोई माप नहीं। बदलाव अन्य टैब तक कितनी जल्दी पहुँचता है, यह मापने के लिए इस टैब में कोई सेटिंग बदलें।',
+    updateAvailable: 'इस ऐप का नया संस्करण दूसरे टैब में खुला है।',
+    reload: 'रीलोड करें',
   },
   ja: {
     appTitle: 'タブ同期設定',
@@ -335,6 +350,9 @@ const catalogs: Record<Language, Catalog> = {
     latencyTarget: '変更が他のタブに届くまでの時間(目標: 100 ms 未満)',
     details: '技術的な詳細',
     dismiss: '閉じる',
+    noLatency: 'まだ計測値がありません。このタブで設定を変更すると、他のタブに届くまでの時間を計測できます。',
+    updateAvailable: '別のタブで新しいバージョンのアプリが開かれています。',
+    reload: '再読み込み',
   },
   ar: {
     appTitle: 'إعدادات متزامنة',
@@ -390,6 +408,9 @@ const catalogs: Record<Language, Catalog> = {
     latencyTarget: 'الوقت اللازم لوصول تغييراتك إلى علامات التبويب الأخرى (الهدف: أقل من 100 ms)',
     details: 'تفاصيل تقنية',
     dismiss: 'إغلاق',
+    noLatency: 'لا توجد قياسات بعد. غيّر إعدادًا في علامة التبويب هذه لقياس سرعة وصوله إلى علامات التبويب الأخرى.',
+    updateAvailable: 'يوجد إصدار أحدث من هذا التطبيق مفتوح في علامة تبويب أخرى.',
+    reload: 'إعادة التحميل',
   },
 };
 

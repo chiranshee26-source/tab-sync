@@ -16,6 +16,8 @@ interface Envelope {
   fp?: string;
   /** Whether the sender is a background tab (its timers may be heavily throttled). */
   hidden?: boolean;
+  /** Build time of the sender's code, to spot tabs still running an older deploy. */
+  build?: number;
 }
 
 export type SyncMessage = Envelope &
@@ -49,6 +51,7 @@ export function parseMessage(raw: unknown): SyncMessage | null {
     sentAt: m.sentAt,
     fp: typeof m.fp === 'string' && m.fp.length <= 16 ? m.fp : undefined,
     hidden: m.hidden === true,
+    build: typeof m.build === 'number' && Number.isFinite(m.build) ? m.build : undefined,
   };
   if (typeof m.type !== 'string') return null;
   if (SIMPLE_TYPES.has(m.type)) return { ...envelope, type: m.type as 'hello' | 'heartbeat' | 'bye' };

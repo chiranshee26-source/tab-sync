@@ -67,6 +67,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   background: var(--bg);
 }
@@ -200,6 +204,29 @@ h2 {
     transform: scale(3);
     opacity: 0;
   }
+}
+
+/* ---------- Update banner ---------- */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.update-banner > .icon {
+  color: var(--warning);
+}
+
+.update-banner > span {
+  flex: 1;
 }
 
 /* ---------- Layout ---------- */
@@ -707,6 +734,15 @@ h2 {
   flex-wrap: wrap;
   gap: 0.625rem;
   margin: 1.25rem 0 0.5rem;
+}
+
+.metrics-empty {
+  margin: 1rem 0 0;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 0.875rem;
 }
 
 /* Technical details */

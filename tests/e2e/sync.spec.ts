@@ -158,3 +158,13 @@ test('a lone tab invites the user to open another one', async ({ context }) => {
   await expect(a.locator('.status-hero')).toHaveAttribute('data-state', 'alone');
   await expect(a.locator('.status-hero')).toContainText('Open the app in a second tab');
 });
+
+test('latency is shown on the tab that sends changes; other tabs explain why it is empty', async ({ context }) => {
+  const [a, b] = await openTabs(context, 2);
+  await a.evaluate(() => window.tabSync.set('language', 'en'));
+  await a.getByRole('button', { name: 'Larger text' }).click();
+  await expect(a.locator('[data-ref="latencyLast"]')).toHaveText(/ms$/);
+  await expect(b.locator('.metrics-empty')).toBeVisible();
+  await expect(b.locator('.metrics-empty')).toContainText('Change a setting in this tab');
+  await expect(b.locator('.update-banner')).toBeHidden();
+});

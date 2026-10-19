@@ -46,6 +46,14 @@ const SHELL = /* html */ `
     </div>
   </header>
 
+  <div class="update-banner" data-ref="updateBanner" role="alert" hidden>
+    ${icons.sync}
+    <span data-i18n="updateAvailable"></span>
+    <button type="button" class="button button-sm button-primary" data-ref="reloadButton">
+      <span data-i18n="reload"></span>
+    </button>
+  </div>
+
   <main class="layout">
     <div class="column">
       <section class="card" aria-labelledby="prefs-heading">
@@ -129,11 +137,12 @@ const SHELL = /* html */ `
 
         <ul class="tab-list" data-ref="tabList" aria-label=""></ul>
 
-        <div class="metrics">
+        <div class="metrics" data-ref="metrics">
           <div class="metric"><span class="metric-label" data-i18n="lastLatency"></span><span class="metric-value mono" data-ref="latencyLast"></span></div>
           <div class="metric"><span class="metric-label" data-i18n="avgLatency"></span><span class="metric-value mono" data-ref="latencyAvg"></span></div>
           <div class="metric"><span class="metric-label" data-i18n="maxLatency"></span><span class="metric-value mono" data-ref="latencyMax"></span></div>
         </div>
+        <p class="metrics-empty" data-ref="metricsEmpty" data-i18n="noLatency" hidden></p>
         <p class="setting-hint metric-target">${icons.bolt}<span data-i18n="latencyTarget"></span></p>
 
         <div class="actions">
@@ -264,6 +273,7 @@ export class SettingsView {
     this.refs.increase.addEventListener('click', () => stepFont(FONT_SIZE.step));
     this.refs.reset.addEventListener('click', () => this.store.reset());
     this.refs.openTab.addEventListener('click', () => window.open(location.href, '_blank'));
+    this.refs.reloadButton.addEventListener('click', () => location.reload());
     this.refs.raceButton.addEventListener('click', () => {
       const button = this.refs.raceButton as HTMLButtonElement;
       button.disabled = true;
@@ -404,6 +414,7 @@ export class SettingsView {
       toast.close.setAttribute('aria-label', this.t('dismiss'));
     }
 
+    this.refs.updateBanner.hidden = !this.store.newerBuildAvailable;
     this.renderStatus();
     this.renderLatency();
     this.renderDetails();
@@ -447,6 +458,10 @@ export class SettingsView {
 
   private renderLatency(): void {
     const samples = this.latencies;
+    // Latency is measured by the tab that sends a change, so a tab that has
+    // only received changes has nothing to show yet: say so instead of dashes.
+    this.refs.metrics.hidden = samples.length === 0;
+    this.refs.metricsEmpty.hidden = samples.length > 0;
     const set = (ref: string, ms: number | undefined) => {
       const node = this.refs[ref];
       node.textContent = ms === undefined ? this.t('noSamples') : `${ms < 10 ? ms.toFixed(2) : ms.toFixed(1)} ms`;
