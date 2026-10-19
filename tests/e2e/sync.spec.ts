@@ -1,11 +1,11 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 /** All pages in one context share localStorage and BroadcastChannel, like tabs. */
-async function openTabs(context: BrowserContext, count: number): Promise<Page[]> {
+async function openTabs(context: BrowserContext, count: number, path = ''): Promise<Page[]> {
   const pages: Page[] = [];
   for (let i = 0; i < count; i++) {
     const page = await context.newPage();
-    await page.goto('/');
+    await page.goto(`/${path}`);
     await page.waitForFunction(() => Boolean(window.tabSync));
     pages.push(page);
   }
@@ -13,11 +13,13 @@ async function openTabs(context: BrowserContext, count: number): Promise<Page[]>
 }
 
 const theme = (page: Page) => page.evaluate(() => document.documentElement.dataset.theme);
+const english = (page: Page) => page.evaluate(() => window.tabSync.setPref('language', 'en'));
+
+// ---------- Preferences: the original requirements ----------
 
 test('dark-mode toggle propagates to other tabs within 100 ms', async ({ context }) => {
   const [a, b, c] = await openTabs(context, 3);
-  const initial = await theme(a);
-  const target = initial === 'dark' ? 'light' : 'dark';
+  const target = (await theme(a)) === 'dark' ? 'light' : 'dark';
 
   // Register listeners first, then trigger the change.
   await Promise.all(
@@ -32,24 +34,23 @@ test('dark-mode toggle propagates to other tabs within 100 ms', async ({ context
   );
   const sentAt = await a.evaluate((value) => {
     const t = performance.timeOrigin + performance.now();
-    window.tabSync.set('theme', value as 'light' | 'dark');
+    window.tabSync.setPref('theme', value as 'light' | 'dark');
     return t;
   }, target);
 
   for (const page of [b, c]) {
     const handle = await page.waitForFunction(() => (window as unknown as { receivedAt?: number }).receivedAt);
-    const receivedAt = (await handle.jsonValue()) as number;
-    expect(receivedAt - sentAt).toBeLessThan(100);
+    expect(((await handle.jsonValue()) as number) - sentAt).toBeLessThan(100);
   }
   for (const page of [b, c]) expect(await theme(page)).toBe(target);
 });
 
-test('UI controls sync language (with RTL) and font size without reloading', async ({ context }) => {
-  const [a, b] = await openTabs(context, 2);
+test('settings controls sync language (with RTL) and font size without reloading', async ({ context }) => {
+  const [a, b] = await openTabs(context, 2, '#/settings');
   await a.selectOption('#language', 'ar');
   await expect(b.locator('html')).toHaveAttribute('lang', 'ar');
   await expect(b.locator('html')).toHaveAttribute('dir', 'rtl');
-  await expect(b.locator('h1')).toHaveText('إعدادات متزامنة');
+  await expect(b.locator('h1')).toHaveText('الإعدادات والمزامنة');
 
   await a.locator('#font-size').fill('21');
   await expect(b.locator('#font-size')).toHaveValue('21');
@@ -59,29 +60,30 @@ test('UI controls sync language (with RTL) and font size without reloading', asy
   await expect(a.getByRole('switch')).toHaveAttribute('aria-checked', String((await theme(b)) === 'dark'));
 });
 
-test('preferences persist after every tab is closed', async ({ context }) => {
+test('everything persists after every tab is closed', async ({ context }) => {
   const [a, b] = await openTabs(context, 2);
   await a.evaluate(() => {
-    window.tabSync.set('theme', 'dark');
-    window.tabSync.set('language', 'ja');
-    window.tabSync.set('fontSize', 23);
+    const s = window.tabSync;
+    s.setPref('theme', 'dark');
+    s.setPref('language', 'ja');
+    s.setPref('fontSize', 23);
+    s.update('task', 'persisted', { title: 'Water the plants', createdAt: 1 });
+    s.update('note', 'persisted', { title: 'Keep me', body: 'Still here', createdAt: 1, updatedAt: 1 });
   });
   await expect(b.locator('html')).toHaveAttribute('lang', 'ja');
   await a.close();
   await b.close();
 
   const [reopened] = await openTabs(context, 1);
-  expect(await reopened.evaluate(() => window.tabSync.values)).toEqual({
-    theme: 'dark',
-    language: 'ja',
-    fontSize: 23,
-  });
+  expect(await reopened.evaluate(() => window.tabSync.prefs)).toEqual({ theme: 'dark', language: 'ja', fontSize: 23 });
+  expect(await reopened.evaluate(() => window.tabSync.get('task', 'persisted')?.title)).toBe('Water the plants');
+  expect(await reopened.evaluate(() => window.tabSync.get('note', 'persisted')?.body)).toBe('Still here');
 });
 
 test('a newly opened tab never paints the wrong theme', async ({ context }) => {
   const [a] = await openTabs(context, 1);
   const target = (await theme(a)) === 'dark' ? 'light' : 'dark';
-  await a.evaluate((value) => window.tabSync.set('theme', value as 'light' | 'dark'), target);
+  await a.evaluate((value) => window.tabSync.setPref('theme', value as 'light' | 'dark'), target);
   await a.waitForFunction(() => localStorage.length > 0);
 
   const page = await context.newPage();
@@ -98,8 +100,33 @@ test('a newly opened tab never paints the wrong theme', async ({ context }) => {
   expect(await page.evaluate(() => (window as unknown as { themeAtBody: string }).themeAtBody)).toBe(target);
 });
 
+test('preferences saved by the first version are migrated', async ({ context }) => {
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    if (localStorage.getItem('daybook:data:v2')) return;
+    const ts = { wall: 5, counter: 0, node: 'old' };
+    localStorage.setItem(
+      'tab-sync:preferences:v1',
+      JSON.stringify({
+        version: 1,
+        fields: {
+          theme: { value: 'dark', ts },
+          language: { value: 'de', ts },
+          fontSize: { value: 20, ts },
+        },
+      }),
+    );
+  });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Guten|Guten Tag|Guten Abend/);
+});
+
+// ---------- Conflict resolution ----------
+
 test('simultaneous edits from many tabs converge to one state', async ({ context }) => {
-  const tabs = await openTabs(context, 4);
+  const tabs = await openTabs(context, 4, '#/settings');
   const fingerprints = () => Promise.all(tabs.map((t) => t.getByTestId('fingerprint').textContent()));
   const before = await fingerprints();
   for (const t of tabs) {
@@ -109,62 +136,110 @@ test('simultaneous edits from many tabs converge to one state', async ({ context
       });
     });
   }
+  await english(tabs[0]);
   await tabs[0].getByRole('button', { name: /concurrent-edit/i }).click();
 
   // The edits fire ~400 ms after the click; wait until every tab has made its own.
   await Promise.all(tabs.map((t) => t.waitForFunction(() => (window as unknown as { raced?: boolean }).raced)));
   expect(await fingerprints()).not.toEqual(before);
 
-  await expect
-    .poll(async () => new Set(await fingerprints()).size, { timeout: 5000 })
-    .toBe(1);
-  const values = await Promise.all(tabs.map((t) => t.evaluate(() => window.tabSync.values)));
+  await expect.poll(async () => new Set(await fingerprints()).size, { timeout: 5000 }).toBe(1);
+  const values = await Promise.all(tabs.map((t) => t.evaluate(() => window.tabSync.prefs)));
   for (const v of values) expect(v).toEqual(values[0]);
   // Storage holds the converged state as well.
   const [fresh] = await openTabs(context, 1);
-  expect(await fresh.evaluate(() => window.tabSync.values)).toEqual(values[0]);
+  expect(await fresh.evaluate(() => window.tabSync.prefs)).toEqual(values[0]);
+});
+
+test("two tabs writing today's diary at once end up with one merged entry", async ({ context }) => {
+  const [a, b] = await openTabs(context, 2, '#/diary');
+  await english(a);
+  await a.getByRole('button', { name: 'Great' }).click();
+  await b.getByPlaceholder('How was your day?').fill('Went hiking');
+  for (const page of [a, b]) {
+    await expect(page.getByRole('button', { name: 'Great' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByPlaceholder('How was your day?')).toHaveValue('Went hiking');
+    await expect(page.locator('.entry-links li')).toHaveCount(1);
+  }
+});
+
+// ---------- Daybook features ----------
+
+test('tasks added and completed in one tab appear in the others', async ({ context }) => {
+  const [a, b] = await openTabs(context, 2, '#/tasks');
+  await english(a);
+  await a.getByPlaceholder('Add a task…').fill('Buy milk');
+  await a.getByRole('button', { name: 'Add' }).click();
+  await expect(b.locator('.task-row .inline-input')).toHaveValue('Buy milk');
+
+  await b.getByRole('checkbox', { name: 'Mark as done' }).check();
+  await expect(a.getByRole('checkbox', { name: 'Mark as done' })).toBeChecked();
+  await expect(a.getByRole('heading', { name: /Completed/ })).toBeVisible();
+  await expect(a.locator('.toast')).toContainText('updated tasks');
+});
+
+test('a note edited in one tab updates live in another without moving its cursor', async ({ context }) => {
+  const [a] = await openTabs(context, 1, '#/notes');
+  await english(a);
+  await a.getByRole('button', { name: 'New note' }).first().click();
+  const url = a.url();
+  const [b] = await openTabs(context, 1, url.slice(url.indexOf('#')));
+
+  const bodyA = a.getByPlaceholder('Start writing…');
+  const bodyB = b.getByPlaceholder('Start writing…');
+  await bodyA.fill('world');
+  await expect(bodyB).toHaveValue('world');
+  await expect(a.locator('.also-open')).toBeVisible();
+
+  // B's caret sits at the end; A inserts text at the start.
+  await bodyB.focus();
+  await bodyB.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(5, 5));
+  await bodyA.focus();
+  await bodyA.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+  await a.keyboard.type('Hello ');
+  await expect(bodyB).toHaveValue('Hello world');
+  expect(await bodyB.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, document.activeElement === el])).toEqual([
+    11,
+    true,
+  ]);
 });
 
 test('other tabs get a toast, a highlight and an "in sync" status', async ({ context }) => {
-  const [a, b] = await openTabs(context, 2);
-  await a.selectOption('#language', 'en');
+  const [a, b] = await openTabs(context, 2, '#/settings');
+  await english(a);
   const aId = await a.evaluate(() => window.tabSync.tabId);
 
   await a.getByRole('button', { name: 'Larger text' }).click();
-  await expect(b.locator('.toast')).toContainText(`Tab ${aId} changed Font size`);
-  await expect(b.locator('[data-setting="fontSize"]')).toHaveClass(/flash/);
-  await expect(a.getByRole('status').first()).toContainText('All tabs in sync');
+  await expect(b.locator('.toast')).toContainText(`Tab ${aId} updated settings`);
+  await expect(b.locator('.flash-ring').first()).toBeAttached();
+  await expect(a.locator('.sync-pill')).toContainText('All tabs in sync');
   await expect(b.locator('.status-hero')).toHaveAttribute('data-state', 'synced');
 
   await b.locator('.toast-close').first().click();
   await expect(b.locator('.toast')).toHaveCount(0);
 });
 
-test('reset restores defaults in every tab', async ({ context }) => {
-  const [a, b] = await openTabs(context, 2);
-  const defaults = await a.evaluate(() => window.tabSync.values);
+test('reset restores default preferences in every tab', async ({ context }) => {
+  const [a, b] = await openTabs(context, 2, '#/settings');
+  const defaults = await a.evaluate(() => window.tabSync.prefs);
   await a.evaluate(() => {
-    window.tabSync.set('fontSize', 22);
-    window.tabSync.set('language', 'de');
+    window.tabSync.setPref('fontSize', 22);
+    window.tabSync.setPref('language', 'de');
   });
   await expect(b.locator('#font-size')).toHaveValue('22');
   await b.getByRole('button', { name: 'Zurücksetzen' }).click();
-  await expect.poll(() => a.evaluate(() => window.tabSync.values)).toEqual(defaults);
+  await expect.poll(() => a.evaluate(() => window.tabSync.prefs)).toEqual(defaults);
 });
 
-test('a lone tab invites the user to open another one', async ({ context }) => {
-  const [a] = await openTabs(context, 1);
-  await a.evaluate(() => window.tabSync.set('language', 'en'));
+test('sync panel: lone-tab prompt and latency explanation', async ({ context }) => {
+  const [a] = await openTabs(context, 1, '#/settings');
+  await english(a);
   await expect(a.locator('.status-hero')).toHaveAttribute('data-state', 'alone');
-  await expect(a.locator('.status-hero')).toContainText('Open the app in a second tab');
-});
+  await expect(a.locator('.status-hero')).toContainText('Open Daybook in a second tab');
 
-test('latency is shown on the tab that sends changes; other tabs explain why it is empty', async ({ context }) => {
-  const [a, b] = await openTabs(context, 2);
-  await a.evaluate(() => window.tabSync.set('language', 'en'));
+  const [b] = await openTabs(context, 1, '#/settings');
   await a.getByRole('button', { name: 'Larger text' }).click();
-  await expect(a.locator('[data-ref="latencyLast"]')).toHaveText(/ms$/);
-  await expect(b.locator('.metrics-empty')).toBeVisible();
-  await expect(b.locator('.metrics-empty')).toContainText('Change a setting in this tab');
-  await expect(b.locator('.update-banner')).toBeHidden();
+  await expect(a.locator('.metric-value').first()).toHaveText(/ms$/);
+  await expect(b.locator('.metrics-empty')).toContainText('Change something in this tab');
+  await expect(b.locator('.update-banner')).toHaveCount(0);
 });

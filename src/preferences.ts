@@ -4,7 +4,10 @@
  * by the inline boot script, so both always agree on validation.
  */
 
-export const STORAGE_KEY = 'tab-sync:preferences:v1';
+/** All synced data (preferences, tasks, reading list, notes, diary) lives under one key. */
+export const STORAGE_KEY = 'daybook:data:v2';
+/** Preferences-only storage of the first version; migrated on load. */
+export const LEGACY_STORAGE_KEY = 'tab-sync:preferences:v1';
 export const CHANNEL_NAME = 'tab-sync:channel:v1';
 
 export const LANGUAGES = ['en', 'es', 'fr', 'de', 'hi', 'ja', 'ar'] as const;

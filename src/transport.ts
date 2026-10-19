@@ -4,7 +4,7 @@
  * event, which every engine supports.
  */
 
-import { parsePartialDoc, type PartialDoc } from './lww';
+import { parseDoc, type Doc } from './lww';
 import { CHANNEL_NAME } from './preferences';
 
 interface Envelope {
@@ -18,6 +18,8 @@ interface Envelope {
   hidden?: boolean;
   /** Build time of the sender's code, to spot tabs still running an older deploy. */
   build?: number;
+  /** Route the sender is showing (e.g. `notes/abc`), so tabs can see what others have open. */
+  view?: string;
 }
 
 export type SyncMessage = Envelope &
@@ -25,8 +27,8 @@ export type SyncMessage = Envelope &
     | { type: 'hello' }
     | { type: 'heartbeat' }
     | { type: 'bye' }
-    | { type: 'update'; entries: PartialDoc }
-    | { type: 'state'; entries: PartialDoc }
+    | { type: 'update'; entries: Doc }
+    | { type: 'state'; entries: Doc }
     | { type: 'race'; at: number }
     /** Reply to an `update`, echoing its `sentAt` so the sender can measure the round trip. */
     | { type: 'ack'; to: string; ackOf: number }
@@ -52,12 +54,13 @@ export function parseMessage(raw: unknown): SyncMessage | null {
     fp: typeof m.fp === 'string' && m.fp.length <= 16 ? m.fp : undefined,
     hidden: m.hidden === true,
     build: typeof m.build === 'number' && Number.isFinite(m.build) ? m.build : undefined,
+    view: typeof m.view === 'string' && m.view.length <= 100 ? m.view : undefined,
   };
   if (typeof m.type !== 'string') return null;
   if (SIMPLE_TYPES.has(m.type)) return { ...envelope, type: m.type as 'hello' | 'heartbeat' | 'bye' };
   if (m.type === 'update' || m.type === 'state') {
     // Entries (values and timestamps) are validated field by field.
-    return { ...envelope, type: m.type, entries: parsePartialDoc(m.entries) };
+    return { ...envelope, type: m.type, entries: parseDoc(m.entries) };
   }
   if (m.type === 'race' && typeof m.at === 'number' && Number.isFinite(m.at)) {
     return { ...envelope, type: 'race', at: m.at };

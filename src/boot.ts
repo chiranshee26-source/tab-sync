@@ -5,15 +5,16 @@
  * direction: no flash of the wrong theme.
  */
 
-import { createDoc, deserializeDoc, merge, valuesOf, type PartialDoc } from './lww';
-import { applyToDocument, defaultPreferences, STORAGE_KEY } from './preferences';
+import { merge, prefsRecord, prefsValues } from './lww';
+import { readStoredDoc } from './persistence';
+import { applyToDocument, defaultPreferences } from './preferences';
 
-let stored: PartialDoc = {};
+let stored = {};
 try {
-  stored = deserializeDoc(localStorage.getItem(STORAGE_KEY));
+  stored = readStoredDoc(localStorage);
 } catch {
   /* storage blocked: fall back to defaults */
 }
 
 // Same merge the app uses, so boot and app can never disagree.
-applyToDocument(valuesOf(merge(createDoc(defaultPreferences()), stored).doc));
+applyToDocument(prefsValues(merge({ prefs: prefsRecord(defaultPreferences()) }, stored).doc));

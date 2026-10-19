@@ -1,5 +1,6 @@
 /**
- * SyncedPreferences: the replicated preference store each tab owns.
+ * SyncedStore: the replicated document each tab owns (preferences, tasks,
+ * reading list, notes and diary).
  *
  *  local edit ──► stamp with HLC ──► apply ──► broadcast `update` ──► persist
  *  remote msg ──► validate ──► observe HLC ──► LWW merge ──► notify UI ──► persist
@@ -17,16 +18,19 @@
 
 import { HybridLogicalClock, type Timestamp } from './clock';
 import {
-  createDoc,
   fingerprint,
   merge,
-  valuesOf,
+  prefsRecord,
+  prefsValues,
+  recordValues,
+  type Doc,
+  type Entry,
+  type FieldRef,
   type MergeResult,
-  type PartialDoc,
-  type PrefsDoc,
 } from './lww';
 import type { Persistence } from './persistence';
-import { FONT_SIZE, LANGUAGES, PREF_KEYS, THEMES, type PrefKey, type Preferences } from './preferences';
+import { FONT_SIZE, LANGUAGES, THEMES, type PrefKey, type Preferences } from './preferences';
+import { recordKey, type ItemKind, type RecordTypes } from './schema';
 import type { SyncMessage, Transport } from './transport';
 
 export type ChangeSource = 'local' | 'remote' | 'storage';
@@ -35,11 +39,15 @@ export interface PeerState {
   id: string;
   /** True when the peer's last reported state equals ours. */
   inSync: boolean;
+  /** Runs an older deploy; it cannot sync with this tab until reloaded. */
+  outdated: boolean;
+  /** Route the peer is showing, if it reported one. */
+  view?: string;
 }
 
 export type StoreEvent =
-  | { type: 'change'; values: Preferences; keys: PrefKey[]; source: ChangeSource; from?: string }
-  | { type: 'conflict'; keys: PrefKey[]; from: string }
+  | { type: 'change'; changes: FieldRef[]; source: ChangeSource; from?: string }
+  | { type: 'conflict'; changes: FieldRef[]; from: string }
   | { type: 'latency'; ms: number; from: string }
   | { type: 'peers'; peers: PeerState[]; joined: string[]; left: string[] }
   | { type: 'race'; at: number; from: string };
@@ -66,6 +74,7 @@ interface Peer {
   fp?: string;
   hidden: boolean;
   build?: number;
+  view?: string;
 }
 
 /** A visible tab that misses ~3 heartbeats is gone (closing a tab also sends `bye`). */
@@ -77,9 +86,11 @@ const PEER_TIMEOUT_FACTOR = 3.5;
 const HIDDEN_PEER_TIMEOUT_MS = 90_000;
 export const RACE_DELAY_MS = 400;
 
-export class SyncedPreferences {
+export class SyncedStore {
   readonly tabId: string;
-  private doc: PrefsDoc;
+  private doc: Doc;
+  private cachedFingerprint?: string;
+  private view?: string;
   private readonly clock: HybridLogicalClock;
   private readonly listeners = new Set<(event: StoreEvent) => void>();
   private readonly peers = new Map<string, Peer>();
@@ -96,25 +107,46 @@ export class SyncedPreferences {
     this.tabId = options.tabId;
     this.now = options.now ?? (() => performance.now());
     this.wallNow = options.wallNow ?? Date.now;
-    this.isHidden = options.isHidden ?? (() => typeof document !== 'undefined' && document.visibilityState === 'hidden');
+    this.isHidden =
+      options.isHidden ?? (() => typeof document !== 'undefined' && document.visibilityState === 'hidden');
     this.random = options.random ?? Math.random;
     this.heartbeatMs = options.heartbeatMs ?? 1000;
     this.clock = new HybridLogicalClock(this.tabId, this.wallNow);
     // Defaults carry the zero timestamp, so any real edit from any tab wins.
-    this.doc = createDoc(options.defaults);
-    this.absorb(options.persistence.load());
+    this.doc = { prefs: prefsRecord(options.defaults) };
+    this.doc = this.absorb(options.persistence.load()).doc;
   }
 
-  get values(): Preferences {
-    return valuesOf(this.doc);
-  }
+  // ---------- Reading ----------
 
-  get document(): PrefsDoc {
+  /** The whole document. A new object after every change (handy for React). */
+  get document(): Doc {
     return this.doc;
   }
 
+  get prefs(): Preferences {
+    return prefsValues(this.doc);
+  }
+
+  get<K extends ItemKind>(kind: K, id: string): RecordTypes[K] | undefined {
+    const key = recordKey(kind, id);
+    return this.doc[key] ? recordValues(this.doc, kind, key) : undefined;
+  }
+
+  /** All records of a kind, without deleted ones. */
+  list<K extends ItemKind>(kind: K): (RecordTypes[K] & { id: string })[] {
+    const prefix = `${kind}:`;
+    const items: (RecordTypes[K] & { id: string })[] = [];
+    for (const key of Object.keys(this.doc)) {
+      if (!key.startsWith(prefix)) continue;
+      const values = recordValues(this.doc, kind, key);
+      if (!('deleted' in values && values.deleted)) items.push({ ...values, id: key.slice(prefix.length) });
+    }
+    return items;
+  }
+
   get fingerprint(): string {
-    return fingerprint(this.doc);
+    return (this.cachedFingerprint ??= fingerprint(this.doc));
   }
 
   get peerIds(): string[] {
@@ -123,7 +155,12 @@ export class SyncedPreferences {
 
   get peerStates(): PeerState[] {
     const own = this.fingerprint;
-    return [...this.peers].map(([id, peer]) => ({ id, inSync: peer.fp === own }));
+    return [...this.peers].map(([id, peer]) => ({
+      id,
+      inSync: peer.fp === own,
+      outdated: this.isOutdated(peer),
+      view: peer.view,
+    }));
   }
 
   /** True when another tab runs a newer deploy, so this one should reload. */
@@ -141,6 +178,41 @@ export class SyncedPreferences {
     return () => this.listeners.delete(listener);
   }
 
+  // ---------- Writing ----------
+
+  /** Writes some fields of a record; unchanged values are skipped. */
+  update<K extends ItemKind>(kind: K, id: string, fields: Partial<RecordTypes[K]>): void {
+    this.write(recordKey(kind, id), fields as Record<string, unknown>);
+  }
+
+  remove(kind: 'task' | 'reading' | 'note', id: string): void {
+    this.update(kind, id, { deleted: true });
+  }
+
+  setPref<K extends PrefKey>(key: K, value: Preferences[K]): void {
+    this.write('prefs', { [key]: value });
+  }
+
+  /** Restores the default preferences as a regular (synced, timestamped) edit. */
+  resetPrefs(): void {
+    this.write('prefs', { ...this.options.defaults });
+  }
+
+  private write(key: string, fields: Record<string, unknown>): void {
+    const current = this.doc[key] ?? {};
+    const changed = Object.entries(fields).filter(([field, value]) => current[field]?.value !== value);
+    if (changed.length === 0) return;
+    const ts = this.clock.now();
+    const record: Record<string, Entry> = {};
+    for (const [field, value] of changed) record[field] = { value, ts };
+    this.setDoc({ ...this.doc, [key]: { ...current, ...record } });
+    this.post({ type: 'update', entries: { [key]: record } });
+    this.emit({ type: 'change', changes: changed.map(([field]) => ({ key, field })), source: 'local' });
+    this.schedulePersist();
+  }
+
+  // ---------- Lifecycle and presence ----------
+
   start(): void {
     this.options.transport.subscribe((message) => this.receive(message));
     this.options.persistence.onExternalChange((stored) => this.applyMerge(merge(this.doc, stored), 'storage'));
@@ -156,8 +228,9 @@ export class SyncedPreferences {
     this.post({ type: 'bye' });
   }
 
-  /** Tells peers right away that this tab went to the background or came back. */
-  announce(): void {
+  /** Tells peers right away that this tab changed page, went to the background or came back. */
+  announce(view: string | undefined = this.view): void {
+    this.view = view;
     this.post({ type: 'heartbeat' });
   }
 
@@ -167,22 +240,7 @@ export class SyncedPreferences {
     this.post({ type: 'hello' });
   }
 
-  set<K extends PrefKey>(key: K, value: Preferences[K]): void {
-    if (this.doc[key].value === value) return;
-    const entry = { value, ts: this.clock.now() };
-    const entries = { [key]: entry } as PartialDoc;
-    this.doc = { ...this.doc, [key]: entry };
-    this.post({ type: 'update', entries });
-    this.emit({ type: 'change', values: this.values, keys: [key], source: 'local' });
-    this.schedulePersist();
-  }
-
-  /** Restores the defaults as a regular (synced, timestamped) edit. */
-  reset(): void {
-    for (const key of PREF_KEYS) this.set(key, this.options.defaults[key]);
-  }
-
-  /** Asks every tab (including this one) to make random edits at the same instant. */
+  /** Asks every tab (including this one) to make conflicting preference edits at the same instant. */
   startRace(): void {
     const at = this.wallNow() + RACE_DELAY_MS;
     this.post({ type: 'race', at });
@@ -192,6 +250,9 @@ export class SyncedPreferences {
   private receive(message: SyncMessage): void {
     if (message.from === this.tabId) return;
     this.touchPeer(message.from, message);
+    // Repair only with tabs running the same build: an older build cannot
+    // represent our data, so exchanging full states with it would never converge.
+    const sameBuild = message.build === this.options.build;
     switch (message.type) {
       case 'hello':
         this.post({ type: 'state', entries: this.doc });
@@ -200,7 +261,7 @@ export class SyncedPreferences {
         this.dropPeer(message.from);
         break;
       case 'update':
-        this.applyMerge(this.absorbFrom(message.entries), 'remote', message.from);
+        this.applyMerge(this.absorb(message.entries), 'remote', message.from);
         // Acknowledge with our new fingerprint; the echo lets the sender time the round trip.
         this.post({ type: 'ack', to: message.from, ackOf: message.sentAt });
         break;
@@ -211,13 +272,13 @@ export class SyncedPreferences {
         }
         break;
       case 'state':
-        this.applyMerge(this.absorbFrom(message.entries), 'remote', message.from);
+        this.applyMerge(this.absorb(message.entries), 'remote', message.from);
         // The sender lacks something we have: send it back once. After that
         // both sides hold the join of the two states, so this cannot loop.
-        if (message.fp && message.fp !== this.fingerprint) this.post({ type: 'state', entries: this.doc });
+        if (sameBuild && message.fp && message.fp !== this.fingerprint) this.post({ type: 'state', entries: this.doc });
         break;
       case 'heartbeat':
-        if (message.fp && message.fp !== this.fingerprint) this.post({ type: 'state', entries: this.doc });
+        if (sameBuild && message.fp && message.fp !== this.fingerprint) this.post({ type: 'state', entries: this.doc });
         break;
       case 'race':
         this.runRace(message.at, message.from);
@@ -225,26 +286,30 @@ export class SyncedPreferences {
     }
   }
 
-  /** Merges validated entries and advances the clock past them. */
-  private absorbFrom(entries: PartialDoc): MergeResult {
-    for (const entry of Object.values(entries) as { ts: Timestamp }[]) this.clock.observe(entry.ts);
+  /** Advances the clock past incoming timestamps, then merges. */
+  private absorb(entries: Doc): MergeResult {
+    for (const record of Object.values(entries)) {
+      for (const entry of Object.values(record) as { ts: Timestamp }[]) this.clock.observe(entry.ts);
+    }
     return merge(this.doc, entries);
-  }
-
-  private absorb(entries: PartialDoc): void {
-    this.doc = this.absorbFrom(entries).doc;
   }
 
   private applyMerge(result: MergeResult, source: ChangeSource, from?: string): void {
     const before = this.doc;
-    this.doc = result.doc;
-    const changed = result.accepted.filter((key) => before[key].value !== result.doc[key].value);
-    if (changed.length > 0) this.emit({ type: 'change', values: this.values, keys: changed, source, from });
-    if (result.rejected.length > 0 && from) this.emit({ type: 'conflict', keys: result.rejected, from });
+    this.setDoc(result.doc);
+    const changed = result.accepted.filter(({ key, field }) => before[key]?.[field]?.value !== result.doc[key][field].value);
+    if (changed.length > 0) this.emit({ type: 'change', changes: changed, source, from });
+    if (result.rejected.length > 0 && from) this.emit({ type: 'conflict', changes: result.rejected, from });
     if (result.accepted.length > 0) {
       this.schedulePersist();
       this.scheduleAck();
     }
+  }
+
+  private setDoc(doc: Doc): void {
+    if (doc === this.doc) return;
+    this.doc = doc;
+    this.cachedFingerprint = undefined;
   }
 
   /**
@@ -260,7 +325,7 @@ export class SyncedPreferences {
     });
   }
 
-  /** Coalesces bursts (e.g. slider drags) into one storage write per task. */
+  /** Coalesces bursts (typing, slider drags) into one storage write per task. */
   private schedulePersist(): void {
     if (this.persistQueued) return;
     this.persistQueued = true;
@@ -282,14 +347,14 @@ export class SyncedPreferences {
         return others[Math.floor(this.random() * others.length)];
       };
       const sizes = Array.from({ length: FONT_SIZE.max - FONT_SIZE.min + 1 }, (_, i) => FONT_SIZE.min + i);
-      const { fontSize, language, theme } = this.values;
-      this.set('fontSize', pickOther(sizes, fontSize));
-      this.set('language', pickOther(LANGUAGES, language));
-      this.set('theme', pickOther(THEMES, theme));
+      const { fontSize, language, theme } = this.prefs;
+      this.setPref('fontSize', pickOther(sizes, fontSize));
+      this.setPref('language', pickOther(LANGUAGES, language));
+      this.setPref('theme', pickOther(THEMES, theme));
     }, Math.max(0, at - this.wallNow()));
   }
 
-  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt' | 'fp' | 'hidden' | 'build'>): void {
+  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt' | 'fp' | 'hidden' | 'build' | 'view'>): void {
     this.ackQueued = false;
     this.options.transport.post({
       ...body,
@@ -298,15 +363,20 @@ export class SyncedPreferences {
       fp: this.fingerprint,
       hidden: this.isHidden(),
       build: this.options.build,
+      view: this.view,
     } as SyncMessage);
+  }
+
+  private isOutdated(peer: Peer): boolean {
+    return (peer.build ?? 0) < (this.options.build ?? 0);
   }
 
   private touchPeer(id: string, message: SyncMessage): void {
     const previous = this.peers.get(id);
-    const { fp, hidden = false, build } = message;
-    this.peers.set(id, { lastSeen: this.now(), fp: fp ?? previous?.fp, hidden, build });
+    const { fp, hidden = false, build, view } = message;
+    this.peers.set(id, { lastSeen: this.now(), fp: fp ?? previous?.fp, hidden, build, view });
     if (!previous) this.emitPeers([id], []);
-    else if (fp && fp !== previous.fp) this.emitPeers([], []);
+    else if ((fp && fp !== previous.fp) || view !== previous.view) this.emitPeers([], []);
   }
 
   private dropPeer(id: string): void {
@@ -332,3 +402,4 @@ export class SyncedPreferences {
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
