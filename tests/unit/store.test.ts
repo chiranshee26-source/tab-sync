@@ -1,0 +1,186 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { deserializeDoc, fingerprint, serializeDoc, type PartialDoc, type PrefsDoc } from '../../src/lww';
+import type { Persistence } from '../../src/persistence';
+import type { Preferences } from '../../src/preferences';
+import { SyncedPreferences } from '../../src/store';
+import type { SyncMessage, Transport } from '../../src/transport';
+
+const DEFAULTS: Preferences = { theme: 'light', language: 'en', fontSize: 16 };
+
+/**
+ * Simulated browser: a message bus that can hold messages and deliver them
+ * in any order, plus a shared "localStorage" string.
+ */
+class Network {
+  storage: string | null = null;
+  private readonly handlers = new Map<Transport, (m: SyncMessage) => void>();
+  private readonly storageHandlers: ((stored: PartialDoc) => void)[] = [];
+  queue: { to: Transport; message: SyncMessage }[] = [];
+  autoDeliver = true;
+
+  transport(): Transport {
+    const self = this;
+    const transport: Transport = {
+      kind: 'test',
+      post(message) {
+        // Structured clone, like the real BroadcastChannel.
+        const copy = JSON.parse(JSON.stringify(message)) as SyncMessage;
+        for (const to of self.handlers.keys()) if (to !== transport) self.queue.push({ to, message: copy });
+        if (self.autoDeliver) self.flush();
+      },
+      subscribe(handler) {
+        self.handlers.set(transport, handler);
+      },
+      close() {
+        self.handlers.delete(transport);
+      },
+    };
+    return transport;
+  }
+
+  persistence(): Persistence {
+    return {
+      load: () => deserializeDoc(this.storage),
+      update: async (mergeFn: (stored: PartialDoc) => PrefsDoc) => {
+        const next = serializeDoc(mergeFn(deserializeDoc(this.storage)));
+        if (next !== this.storage) {
+          this.storage = next;
+          for (const h of this.storageHandlers) h(deserializeDoc(next));
+        }
+      },
+      onExternalChange: (handler) => {
+        this.storageHandlers.push(handler);
+      },
+    };
+  }
+
+  flush(shuffle?: () => number): void {
+    while (this.queue.length) {
+      const index = shuffle ? Math.floor(shuffle() * this.queue.length) : 0;
+      const [{ to, message }] = this.queue.splice(index, 1);
+      this.handlers.get(to)?.(message);
+    }
+  }
+}
+
+function openTab(net: Network, id: string, now = () => Date.now()): SyncedPreferences {
+  const store = new SyncedPreferences({
+    tabId: id,
+    transport: net.transport(),
+    persistence: net.persistence(),
+    defaults: DEFAULTS,
+    epochNow: now,
+    random: Math.random,
+  });
+  store.start();
+  return store;
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('SyncedPreferences', () => {
+  beforeEach(() => vi.useRealTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('propagates a local change to every other tab', () => {
+    const net = new Network();
+    const [a, b, c] = ['a', 'b', 'c'].map((id) => openTab(net, id));
+    a.set('theme', 'dark');
+    expect(b.values.theme).toBe('dark');
+    expect(c.values.theme).toBe('dark');
+    [a, b, c].forEach((s) => s.stop());
+  });
+
+  it('persists changes and restores them in a tab opened later', async () => {
+    const net = new Network();
+    const a = openTab(net, 'a');
+    a.set('fontSize', 22);
+    a.set('language', 'de');
+    await settle();
+    a.stop();
+
+    const later = openTab(net, 'z');
+    expect(later.values).toEqual({ theme: 'light', language: 'de', fontSize: 22 });
+    later.stop();
+  });
+
+  it('a new tab catches up via hello/state even before storage is written', () => {
+    const net = new Network();
+    const a = openTab(net, 'a');
+    a.set('theme', 'dark'); // persistence is still queued in a microtask
+    expect(net.storage).toBeNull();
+    const b = openTab(net, 'b');
+    expect(b.values.theme).toBe('dark');
+    a.stop();
+    b.stop();
+  });
+
+  it('converges when many tabs edit simultaneously and messages arrive in random order', async () => {
+    const net = new Network();
+    net.autoDeliver = false;
+    let seed = 1;
+    const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    const tabs = Array.from({ length: 5 }, (_, i) => openTab(net, `tab${i}`, () => 1_000)); // identical wall clocks
+    net.flush(random);
+
+    for (let round = 0; round < 20; round++) {
+      for (const tab of tabs) {
+        tab.set('fontSize', 12 + Math.floor(random() * 13));
+        tab.set('theme', random() < 0.5 ? 'dark' : 'light');
+        tab.set('language', (['en', 'fr', 'ja'] as const)[Math.floor(random() * 3)]);
+      }
+      if (round % 3 === 0) net.flush(random); // partial interleavings
+    }
+    net.flush(random);
+    await settle();
+
+    const prints = new Set(tabs.map((t) => fingerprint(t.document)));
+    expect(prints.size).toBe(1);
+    // Storage converges to the same state too.
+    expect(fingerprint(tabs[0].document)).toBe(
+      fingerprint({ ...tabs[0].document, ...(deserializeDoc(net.storage) as PrefsDoc) }),
+    );
+    tabs.forEach((t) => t.stop());
+  });
+
+  it('an edit made after seeing a remote value wins, even with a lagging clock', () => {
+    const net = new Network();
+    const fast = openTab(net, 'fast', () => 10_000);
+    const slow = openTab(net, 'slow', () => 1); // badly skewed clock
+    fast.set('theme', 'dark');
+    slow.set('theme', 'light'); // the user saw "dark" and deliberately changed it
+    expect(fast.values.theme).toBe('light');
+    expect(slow.values.theme).toBe('light');
+    fast.stop();
+    slow.stop();
+  });
+
+  it('reports conflicts when a stale update loses', () => {
+    const net = new Network();
+    net.autoDeliver = false;
+    const a = openTab(net, 'a', () => 1);
+    const b = openTab(net, 'b', () => 2);
+    net.flush();
+    const conflicts: string[] = [];
+    b.subscribe((e) => e.type === 'conflict' && conflicts.push(...e.keys));
+    a.set('language', 'fr'); // older
+    b.set('language', 'de'); // newer, concurrent
+    net.flush();
+    expect(a.values.language).toBe('de');
+    expect(b.values.language).toBe('de');
+    expect(conflicts).toEqual(['language']);
+    a.stop();
+    b.stop();
+  });
+
+  it('tracks peers joining and leaving', () => {
+    const net = new Network();
+    const a = openTab(net, 'a');
+    const b = openTab(net, 'b');
+    expect(a.peerIds).toEqual(['b']);
+    expect(b.peerIds).toEqual(['a']);
+    b.stop();
+    expect(a.peerIds).toEqual([]);
+    a.stop();
+  });
+});
