@@ -71,7 +71,7 @@ The sync engine (`store.ts` and below) has no DOM dependency apart from injected
 
 Each tab owns a full replica of the preference document. A local edit is stamped, applied, then:
 
-1. **Broadcast** as an `update` message on a `BroadcastChannel`. This is an in-memory, same-origin message bus, so delivery takes about a millisecond, well under the 100 ms target. Each message carries its send time, and receivers display the measured latency. Browsers without `BroadcastChannel` fall back to the `storage` event.
+1. **Broadcast** as an `update` message on a `BroadcastChannel`. This is an in-memory, same-origin message bus, so delivery takes about a millisecond, well under the 100 ms target. Every receiver answers with an `ack` echoing the update's send time, and the sender displays half the round trip as the latency. Both timestamps come from the sender's own monotonic clock, so the figure stays correct even when tabs' clocks disagree (e.g. after laptop sleep or an NTP correction). Browsers without `BroadcastChannel` fall back to the `storage` event.
 2. **Persisted** to `localStorage` with a *read-merge-write* cycle: the stored document is merged with the in-memory one before saving, so a tab can never overwrite a newer value written by another tab. Where the Web Locks API is available, the cycle runs under a cross-tab lock. Rapid edits (slider drags) are coalesced into one write per task.
 
 Several mechanisms make delivery robust:
@@ -79,7 +79,7 @@ Several mechanisms make delivery robust:
 - **Handshake.** A newly opened tab sends `hello`; peers reply with their full `state`. This covers updates that have not reached storage yet.
 - **Anti-entropy.** Every tab also listens for `storage` events, a second, independent path, so a missed broadcast is repaired the next time any tab persists.
 - **Resync.** On `visibilitychange` and bfcache restore (`pageshow` with `persisted`), the tab re-reads storage and re-announces itself.
-- **Presence.** Heartbeats every second, plus `bye` on `pagehide`, drive the open-tabs counter.
+- **Presence.** Heartbeats every second, plus `bye` on `pagehide`, drive the open-tabs counter. Browsers throttle timers in background tabs (Chrome: down to one run per minute after five minutes hidden), so each message says whether its sender is hidden. A silent visible tab is dropped after 3.5 s, a silent background tab only after 90 s. Tabs announce visibility changes immediately. A closed tab sends `bye` and disappears at once either way.
 - **Convergence check and self-repair.** Every message carries the sender's state fingerprint. A tab that applies a remote change acknowledges at once with its new fingerprint, so each tab knows whether its peers have converged (that drives the "All tabs in sync" indicator). If a heartbeat reveals a mismatch, the tab replies with its full state. A tab that receives a state lacking something it has sends its own state back once. After that exchange both hold the join of the two states, so the repair always terminates.
 
 All incoming data (messages and storage) is validated field by field. Unknown or corrupt fields are dropped individually, so a tab running an older build, or a hand-edited `localStorage`, cannot break the others.
@@ -104,7 +104,7 @@ Defaults (system color scheme, browser language) carry the zero timestamp, so an
 
 ## Tests
 
-- **Unit (Vitest, 21 tests):** HLC monotonicity and causality; merge laws (randomized); delivery-order convergence; validation of corrupt input; store-level propagation, persistence, handshake, skewed clocks, conflict reporting, presence, reset, and self-repair after a dropped message.
+- **Unit (Vitest, 23 tests):** HLC monotonicity and causality; merge laws (randomized); delivery-order convergence; validation of corrupt input; store-level propagation, persistence, handshake, skewed clocks, conflict reporting, presence, reset, self-repair after a dropped message, clock-independent latency measurement, and presence for throttled background tabs.
 - **End-to-end (Playwright, 8 tests with real Chromium tabs sharing one browser context):** cross-tab propagation under 100 ms; language/RTL/font-size sync through the UI; persistence after closing every tab; no wrong-theme paint on a new tab; four tabs converging after the concurrent-edit test; toast, highlight and "in sync" status; reset across tabs; the single-tab prompt.
 
 ## Deployment

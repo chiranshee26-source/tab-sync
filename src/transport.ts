@@ -14,6 +14,8 @@ interface Envelope {
   sentAt: number;
   /** Fingerprint of the sender's state after this message, for convergence checks. */
   fp?: string;
+  /** Whether the sender is a background tab (its timers may be heavily throttled). */
+  hidden?: boolean;
 }
 
 export type SyncMessage = Envelope &
@@ -24,6 +26,8 @@ export type SyncMessage = Envelope &
     | { type: 'update'; entries: PartialDoc }
     | { type: 'state'; entries: PartialDoc }
     | { type: 'race'; at: number }
+    /** Reply to an `update`, echoing its `sentAt` so the sender can measure the round trip. */
+    | { type: 'ack'; to: string; ackOf: number }
   );
 
 export interface Transport {
@@ -44,6 +48,7 @@ export function parseMessage(raw: unknown): SyncMessage | null {
     from: m.from,
     sentAt: m.sentAt,
     fp: typeof m.fp === 'string' && m.fp.length <= 16 ? m.fp : undefined,
+    hidden: m.hidden === true,
   };
   if (typeof m.type !== 'string') return null;
   if (SIMPLE_TYPES.has(m.type)) return { ...envelope, type: m.type as 'hello' | 'heartbeat' | 'bye' };
@@ -53,6 +58,9 @@ export function parseMessage(raw: unknown): SyncMessage | null {
   }
   if (m.type === 'race' && typeof m.at === 'number' && Number.isFinite(m.at)) {
     return { ...envelope, type: 'race', at: m.at };
+  }
+  if (m.type === 'ack' && typeof m.to === 'string' && typeof m.ackOf === 'number' && Number.isFinite(m.ackOf)) {
+    return { ...envelope, type: 'ack', to: m.to, ackOf: m.ackOf };
   }
   return null;
 }

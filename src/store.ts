@@ -49,8 +49,12 @@ export interface StoreOptions {
   transport: Transport;
   persistence: Persistence;
   defaults: Preferences;
-  /** High-resolution epoch milliseconds; comparable across tabs. */
-  epochNow?: () => number;
+  /** Local monotonic clock (ms) for latency and presence; never compared across tabs. */
+  now?: () => number;
+  /** Wall-clock time (ms), shared by all tabs on the machine: drives the HLC and the race start. */
+  wallNow?: () => number;
+  /** Whether this tab is currently in the background. */
+  isHidden?: () => boolean;
   random?: () => number;
   heartbeatMs?: number;
 }
@@ -58,9 +62,16 @@ export interface StoreOptions {
 interface Peer {
   lastSeen: number;
   fp?: string;
+  hidden: boolean;
 }
 
+/** A visible tab that misses ~3 heartbeats is gone (closing a tab also sends `bye`). */
 const PEER_TIMEOUT_FACTOR = 3.5;
+/**
+ * Background tabs get their timers throttled (Chrome: down to one run per
+ * minute after five minutes hidden), so their heartbeats can be far apart.
+ */
+const HIDDEN_PEER_TIMEOUT_MS = 90_000;
 export const RACE_DELAY_MS = 400;
 
 export class SyncedPreferences {
@@ -69,7 +80,9 @@ export class SyncedPreferences {
   private readonly clock: HybridLogicalClock;
   private readonly listeners = new Set<(event: StoreEvent) => void>();
   private readonly peers = new Map<string, Peer>();
-  private readonly epochNow: () => number;
+  private readonly now: () => number;
+  private readonly wallNow: () => number;
+  private readonly isHidden: () => boolean;
   private readonly random: () => number;
   private readonly heartbeatMs: number;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
@@ -78,10 +91,12 @@ export class SyncedPreferences {
 
   constructor(private readonly options: StoreOptions) {
     this.tabId = options.tabId;
-    this.epochNow = options.epochNow ?? (() => performance.timeOrigin + performance.now());
+    this.now = options.now ?? (() => performance.now());
+    this.wallNow = options.wallNow ?? Date.now;
+    this.isHidden = options.isHidden ?? (() => typeof document !== 'undefined' && document.visibilityState === 'hidden');
     this.random = options.random ?? Math.random;
     this.heartbeatMs = options.heartbeatMs ?? 1000;
-    this.clock = new HybridLogicalClock(this.tabId);
+    this.clock = new HybridLogicalClock(this.tabId, this.wallNow);
     // Defaults carry the zero timestamp, so any real edit from any tab wins.
     this.doc = createDoc(options.defaults);
     this.absorb(options.persistence.load());
@@ -132,6 +147,11 @@ export class SyncedPreferences {
     this.post({ type: 'bye' });
   }
 
+  /** Tells peers right away that this tab went to the background or came back. */
+  announce(): void {
+    this.post({ type: 'heartbeat' });
+  }
+
   /** Re-reads storage and re-announces this tab, e.g. after restoring from bfcache. */
   resync(): void {
     this.applyMerge(merge(this.doc, this.options.persistence.load()), 'storage');
@@ -155,14 +175,14 @@ export class SyncedPreferences {
 
   /** Asks every tab (including this one) to make random edits at the same instant. */
   startRace(): void {
-    const at = this.epochNow() + RACE_DELAY_MS;
+    const at = this.wallNow() + RACE_DELAY_MS;
     this.post({ type: 'race', at });
     this.runRace(at, this.tabId);
   }
 
   private receive(message: SyncMessage): void {
     if (message.from === this.tabId) return;
-    this.touchPeer(message.from, message.fp);
+    this.touchPeer(message.from, message.fp, message.hidden ?? false);
     switch (message.type) {
       case 'hello':
         this.post({ type: 'state', entries: this.doc });
@@ -171,8 +191,15 @@ export class SyncedPreferences {
         this.dropPeer(message.from);
         break;
       case 'update':
-        this.emit({ type: 'latency', ms: Math.max(0, this.epochNow() - message.sentAt), from: message.from });
         this.applyMerge(this.absorbFrom(message.entries), 'remote', message.from);
+        // Acknowledge with our new fingerprint; the echo lets the sender time the round trip.
+        this.post({ type: 'ack', to: message.from, ackOf: message.sentAt });
+        break;
+      case 'ack':
+        // Both timestamps come from our own clock, so clock differences between tabs cancel out.
+        if (message.to === this.tabId) {
+          this.emit({ type: 'latency', ms: Math.max(0, this.now() - message.ackOf) / 2, from: message.from });
+        }
         break;
       case 'state':
         this.applyMerge(this.absorbFrom(message.entries), 'remote', message.from);
@@ -211,13 +238,16 @@ export class SyncedPreferences {
     }
   }
 
-  /** Tells peers our new fingerprint right away, so their sync indicator settles fast. */
+  /**
+   * Tells peers our new fingerprint right away, so their sync indicator
+   * settles fast. Every message carries the fingerprint, so any message sent
+   * before the microtask runs (e.g. the `ack` to an update) already does it.
+   */
   private scheduleAck(): void {
     if (this.ackQueued) return;
     this.ackQueued = true;
     queueMicrotask(() => {
-      this.ackQueued = false;
-      this.post({ type: 'heartbeat' });
+      if (this.ackQueued) this.post({ type: 'heartbeat' });
     });
   }
 
@@ -247,21 +277,23 @@ export class SyncedPreferences {
       this.set('fontSize', pickOther(sizes, fontSize));
       this.set('language', pickOther(LANGUAGES, language));
       this.set('theme', pickOther(THEMES, theme));
-    }, Math.max(0, at - this.epochNow()));
+    }, Math.max(0, at - this.wallNow()));
   }
 
-  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt' | 'fp'>): void {
+  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt' | 'fp' | 'hidden'>): void {
+    this.ackQueued = false;
     this.options.transport.post({
       ...body,
       from: this.tabId,
-      sentAt: this.epochNow(),
+      sentAt: this.now(),
       fp: this.fingerprint,
+      hidden: this.isHidden(),
     } as SyncMessage);
   }
 
-  private touchPeer(id: string, fp: string | undefined): void {
+  private touchPeer(id: string, fp: string | undefined, hidden: boolean): void {
     const previous = this.peers.get(id);
-    this.peers.set(id, { lastSeen: this.epochNow(), fp: fp ?? previous?.fp });
+    this.peers.set(id, { lastSeen: this.now(), fp: fp ?? previous?.fp, hidden });
     if (!previous) this.emitPeers([id], []);
     else if (fp && fp !== previous.fp) this.emitPeers([], []);
   }
@@ -271,8 +303,10 @@ export class SyncedPreferences {
   }
 
   private prunePeers(): void {
-    const cutoff = this.epochNow() - this.heartbeatMs * PEER_TIMEOUT_FACTOR;
-    const left = [...this.peers].filter(([, peer]) => peer.lastSeen < cutoff).map(([id]) => id);
+    const now = this.now();
+    const left = [...this.peers]
+      .filter(([, peer]) => now - peer.lastSeen > (peer.hidden ? HIDDEN_PEER_TIMEOUT_MS : this.heartbeatMs * PEER_TIMEOUT_FACTOR))
+      .map(([id]) => id);
     for (const id of left) this.peers.delete(id);
     if (left.length > 0) this.emitPeers([], left);
   }

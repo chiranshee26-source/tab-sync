@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deserializeDoc, fingerprint, serializeDoc, type PartialDoc, type PrefsDoc } from '../../src/lww';
 import type { Persistence } from '../../src/persistence';
 import type { Preferences } from '../../src/preferences';
-import { SyncedPreferences } from '../../src/store';
+import { SyncedPreferences, type StoreOptions } from '../../src/store';
 import type { SyncMessage, Transport } from '../../src/transport';
 
 const DEFAULTS: Preferences = { theme: 'light', language: 'en', fontSize: 16 };
@@ -63,14 +63,15 @@ class Network {
   }
 }
 
-function openTab(net: Network, id: string, now = () => Date.now()): SyncedPreferences {
+function openTab(net: Network, id: string, overrides: Partial<StoreOptions> = {}): SyncedPreferences {
   const store = new SyncedPreferences({
     tabId: id,
     transport: net.transport(),
     persistence: net.persistence(),
     defaults: DEFAULTS,
-    epochNow: now,
-    random: Math.random,
+    now: () => Date.now(),
+    isHidden: () => false,
+    ...overrides,
   });
   store.start();
   return store;
@@ -120,7 +121,7 @@ describe('SyncedPreferences', () => {
     net.autoDeliver = false;
     let seed = 1;
     const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-    const tabs = Array.from({ length: 5 }, (_, i) => openTab(net, `tab${i}`, () => 1_000)); // identical wall clocks
+    const tabs = Array.from({ length: 5 }, (_, i) => openTab(net, `tab${i}`, { wallNow: () => 1_000 })); // identical wall clocks
     net.flush(random);
 
     for (let round = 0; round < 20; round++) {
@@ -145,8 +146,8 @@ describe('SyncedPreferences', () => {
 
   it('an edit made after seeing a remote value wins, even with a lagging clock', () => {
     const net = new Network();
-    const fast = openTab(net, 'fast', () => 10_000);
-    const slow = openTab(net, 'slow', () => 1); // badly skewed clock
+    const fast = openTab(net, 'fast', { wallNow: () => 10_000 });
+    const slow = openTab(net, 'slow', { wallNow: () => 1 }); // badly skewed clock
     fast.set('theme', 'dark');
     slow.set('theme', 'light'); // the user saw "dark" and deliberately changed it
     expect(fast.values.theme).toBe('light');
@@ -158,8 +159,8 @@ describe('SyncedPreferences', () => {
   it('reports conflicts when a stale update loses', () => {
     const net = new Network();
     net.autoDeliver = false;
-    const a = openTab(net, 'a', () => 1);
-    const b = openTab(net, 'b', () => 2);
+    const a = openTab(net, 'a', { wallNow: () => 1 });
+    const b = openTab(net, 'b', { wallNow: () => 2 });
     net.flush();
     const conflicts: string[] = [];
     b.subscribe((e) => e.type === 'conflict' && conflicts.push(...e.keys));
@@ -208,6 +209,42 @@ describe('SyncedPreferences', () => {
     expect(b.values).toEqual(DEFAULTS);
     a.stop();
     b.stop();
+  });
+
+  it('measures latency as half the round trip, on the sender\'s own clock', () => {
+    const net = new Network();
+    net.autoDeliver = false;
+    let clockA = 100;
+    // Wildly different clocks per tab must not matter.
+    const a = openTab(net, 'a', { now: () => clockA });
+    const b = openTab(net, 'b', { now: () => 1_000_000 });
+    net.flush();
+    const latencies: { tab: string; ms: number }[] = [];
+    a.subscribe((e) => e.type === 'latency' && latencies.push({ tab: 'a', ms: e.ms }));
+    b.subscribe((e) => e.type === 'latency' && latencies.push({ tab: 'b', ms: e.ms }));
+    a.set('theme', 'dark');
+    clockA = 110; // the round trip takes 10 ms on a's clock
+    net.flush();
+    expect(latencies).toEqual([{ tab: 'a', ms: 5 }]);
+    a.stop();
+    b.stop();
+  });
+
+  it('keeps background tabs (throttled timers) listed, but drops silent visible tabs', () => {
+    vi.useFakeTimers();
+    const net = new Network();
+    const a = openTab(net, 'a');
+    const background = openTab(net, 'bg', { isHidden: () => true });
+    const crashed = openTab(net, 'gone');
+    // Simulate throttled / dead tabs: their messages stop arriving, without a `bye`.
+    net.autoDeliver = false;
+    vi.advanceTimersByTime(10_000);
+    net.queue = [];
+    expect(a.peerIds).toEqual(['bg']);
+    vi.advanceTimersByTime(90_000);
+    net.queue = [];
+    expect(a.peerIds).toEqual([]);
+    [a, background, crashed].forEach((s) => s.stop());
   });
 
   it('tracks peers joining and leaving', () => {

@@ -23,6 +23,8 @@ window.addEventListener('pageshow', (event) => {
   if (event.persisted) store.resync();
 });
 document.addEventListener('visibilitychange', () => {
+  // Peers allow background tabs a much longer heartbeat gap, so tell them now.
+  store.announce();
   if (document.visibilityState === 'visible') store.resync();
 });
 
