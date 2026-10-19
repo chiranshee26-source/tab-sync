@@ -2,7 +2,7 @@
 
 A TypeScript web app that keeps user preferences (dark mode, language, font size) in sync across every open browser tab in real time, persists them across sessions, and resolves simultaneous edits deterministically.
 
-**Live demo:** _DEPLOY_URL_ (open it in two or more tabs side by side)
+**Live demo:** https://chiranshee26-source.github.io/tab-sync/ (open it in two or more tabs side by side)
 
 - **Dark-mode toggle**, **language selector** (English, Español, Français, Deutsch, हिन्दी, 日本語, العربية, with right-to-left layout for Arabic) and **font-size slider** (12–24 px)
 - Changes reach other tabs in **~1 ms** via `BroadcastChannel` (target: < 100 ms). Each tab shows measured latency
