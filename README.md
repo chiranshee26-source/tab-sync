@@ -33,6 +33,7 @@ Under *Settings & sync → Background & colours*, pick or drop any photo. It bec
 2. **Derive.** Light and dark token sets are built in **OKLCH**. They keep the picture's hues but set lightness and chroma deliberately, then nudge lightness until every text/background pair meets WCAG contrast (text ≥ 7:1, muted text and accent ≥ 4.5:1). Status colours stay green, amber and red. Unit tests check this for blue, almost-white, almost-black, garish and autumn pictures.
 3. **Store and sync.** The resized picture goes to **IndexedDB**, named by a SHA-256 of its contents. The synced document only holds an `appearance` record with that id and the colour seeds, both stamped with one timestamp so concurrent changes never mix one tab's picture with another's colours. Every tab switches at once.
 4. **No flash.** The inline boot script applies the derived colours before first paint, just like the theme.
+5. **Your pictures.** Every picture you use is kept in a synced gallery (`picture:<hash>` records, pictures stored in IndexedDB), so you can switch back to an earlier one with a click, from any tab, or remove it.
 
 ## What you can do
 
@@ -101,6 +102,7 @@ Everything lives in one document, a map of **records**:
 ```
 prefs                → { theme, language, fontSize }
 appearance           → { image, palette }          (picture id + colour seeds)
+picture:<hash>       → { palette, addedAt, deleted } (saved-pictures gallery)
 task:<id>            → { title, done, due, createdAt, deleted }
 reading:<id>         → { title, url, status, createdAt, deleted }
 note:<id>            → { title, body, createdAt, updatedAt, deleted }
@@ -157,7 +159,7 @@ Because the merge is **commutative, associative and idempotent**, tabs that have
   - Self-repair after a dropped message, round-trip latency, version detection
   - Caret adjustment
   - Colour: OKLab round trips, contrast, palette extraction, readable themes from extreme pictures
-- **End-to-end (Playwright, 13 tests with real Chromium tabs sharing one browser context):**
+- **End-to-end (Playwright, 14 tests with real Chromium tabs sharing one browser context):**
   - Propagation under 100 ms
   - Language/RTL/font-size sync through the UI
   - Persistence of preferences and data after closing every tab
@@ -171,6 +173,7 @@ Because the merge is **commutative, associative and idempotent**, tabs that have
   - Reset across tabs
   - Lone-tab prompt and latency display
   - A background picture becoming the theme in every tab, applied before first paint after reload
+  - The saved-pictures gallery: switching back and removing pictures across tabs
 
 ## Deployment
 

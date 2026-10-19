@@ -303,3 +303,43 @@ test('a background picture becomes the theme in every tab, and before first pain
   await expect(b.locator('html')).not.toHaveAttribute('data-custom-palette', '');
   await expect(b.locator('.almanac')).toBeVisible();
 });
+
+test('previously used pictures are saved and can be switched back to from any tab', async ({ context }) => {
+  const [a, b] = await openTabs(context, 2, '#/settings');
+  await english(a);
+  const picture = (top: string, bottom: string) =>
+    a.evaluate(
+      ([t, bt]) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 300;
+        const g = canvas.getContext('2d')!;
+        g.fillStyle = t;
+        g.fillRect(0, 0, 400, 180);
+        g.fillStyle = bt;
+        g.fillRect(0, 180, 400, 120);
+        return canvas.toDataURL('image/png').split(',')[1];
+      },
+      [top, bottom],
+    );
+  const upload = async (name: string, data: string) => {
+    await a.locator('input[type=file]').setInputFiles({ name, mimeType: 'image/png', buffer: Buffer.from(data, 'base64') });
+  };
+
+  await upload('forest.png', await picture('#2f5d3a', '#1a2a1c'));
+  await expect(a.locator('.picture-tile')).toHaveCount(1);
+  const first = await a.evaluate(() => window.tabSync.appearance.image);
+  await upload('sunset.png', await picture('#e07a3f', '#5a2a3c'));
+  await expect(b.locator('.picture-tile')).toHaveCount(2);
+  await expect(b.locator('.picture-tile[data-current]')).toHaveCount(1);
+
+  // Switch back to the first picture from the other tab.
+  await b.getByRole('button', { name: 'Use this picture' }).click();
+  await expect.poll(() => a.evaluate(() => window.tabSync.appearance.image)).toBe(first);
+
+  // Removing the picture in use returns to the autumn theme everywhere.
+  await a.locator('.picture-tile[data-current]').hover();
+  await a.locator('.picture-tile[data-current]').getByRole('button', { name: 'Remove from your pictures' }).click();
+  await expect(b.locator('.picture-tile')).toHaveCount(1);
+  await expect(b.locator('html')).not.toHaveAttribute('data-custom-palette', '');
+});

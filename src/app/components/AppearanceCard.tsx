@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
 import { parsePalette } from '../../color';
 import { deleteImage, importImage } from '../../images';
 import { useImageUrl } from '../hooks';
@@ -7,9 +7,47 @@ import { useModel } from '../model';
 import { Flash } from './common';
 
 /** The default autumn theme's key colours, for the swatch preview. */
-const AUTUMN_SWATCHES = ['#f4ede2', '#b4532a', '#c98b2b', '#6b7238', '#2b2119'];
+const AUTUMN_SWATCHES = ['#f4ede2', '#b14f27', '#c98b2b', '#6b7238', '#2b2119'];
 
 type Status = 'idle' | 'working' | 'error';
+
+/** One saved picture in the "Your pictures" gallery. */
+function SavedPictureTile({ id, palette, current }: { id: string; palette: string; current: boolean }) {
+  const { store, t } = useModel();
+  const url = useImageUrl(id);
+  return (
+    <li className="picture-tile" data-current={current || undefined}>
+      <button
+        type="button"
+        className="picture-use"
+        aria-pressed={current}
+        aria-label={current ? t('currentPicture') : t('usePicture')}
+        title={current ? t('currentPicture') : t('usePicture')}
+        onClick={() => store.setAppearance({ image: id, palette })}
+      >
+        {url ? <img src={url} alt="" /> : <span className="picture-placeholder" />}
+        {current && (
+          <span className="picture-current">
+            <Icon name="check" />
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className="picture-remove"
+        aria-label={t('removePicture')}
+        title={t('removePicture')}
+        onClick={() => {
+          if (current) store.setAppearance({ image: '', palette: '' });
+          store.remove('picture', id);
+          void deleteImage(id).catch(() => undefined);
+        }}
+      >
+        <Icon name="close" />
+      </button>
+    </li>
+  );
+}
 
 export function AppearanceCard() {
   const model = useModel();
@@ -19,20 +57,21 @@ export function AppearanceCard() {
   const [status, setStatus] = useState<Status>('idle');
   const [dragging, setDragging] = useState(false);
   const swatches = palette ? parsePalette(palette) : AUTUMN_SWATCHES;
+  const saved = store.list('picture').sort((a, b) => b.addedAt - a.addedAt);
 
-  const replace = (next: { image: string; palette: string }) => {
-    const previous = store.appearance.image;
-    store.setAppearance(next);
-    if (previous && previous !== next.image) void deleteImage(previous).catch(() => undefined);
-  };
+  // A picture chosen before the gallery existed: add it so it is not lost.
+  useEffect(() => {
+    if (image && !store.get('picture', image)) store.update('picture', image, { palette, addedAt: Date.now() });
+  }, [image, palette, store]);
 
   const choose = async (file: File | undefined) => {
     if (!file) return;
     setStatus('working');
     try {
-      // The picture is stored before the record changes, so other tabs can load it at once.
+      // The picture is stored before any record changes, so other tabs can load it at once.
       const { id, palette: colours } = await importImage(file);
-      replace({ image: id, palette: colours });
+      store.update('picture', id, { palette: colours, addedAt: Date.now(), deleted: false });
+      store.setAppearance({ image: id, palette: colours });
       setStatus('idle');
     } catch {
       setStatus('error');
@@ -94,13 +133,25 @@ export function AppearanceCard() {
           />
         </label>
         {(image || palette) && (
-          <button type="button" className="button" onClick={() => replace({ image: '', palette: '' })}>
+          <button type="button" className="button" onClick={() => store.setAppearance({ image: '', palette: '' })}>
             <Icon name="leaf" />
             {t('useDefaultTheme')}
           </button>
         )}
       </div>
       <p className="setting-hint">{status === 'error' ? <span className="error-text">{t('imageError')}</span> : t('dropHint')}</p>
+
+      {saved.length > 0 && (
+        <div className="saved-pictures">
+          <h3 className="subheading">{t('savedPictures')}</h3>
+          <p className="setting-hint">{t('savedPicturesHint')}</p>
+          <ul className="picture-grid">
+            {saved.map((picture) => (
+              <SavedPictureTile key={picture.id} id={picture.id} palette={picture.palette} current={picture.id === image} />
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

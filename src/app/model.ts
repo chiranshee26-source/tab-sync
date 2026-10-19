@@ -27,6 +27,7 @@ export const WHAT: Record<Kind, MessageKey> = {
   note: 'whatNotes',
   diary: 'whatDiary',
   appearance: 'whatAppearance',
+  picture: 'whatAppearance',
 };
 
 export interface LogEntry {
@@ -47,7 +48,8 @@ function kindsOf(changes: FieldRef[]): Kind[] {
   const kinds = new Set<Kind>();
   for (const { key } of changes) {
     const parsed = parseRecordKey(key);
-    if (parsed) kinds.add(parsed.kind);
+    // Saving a picture to the gallery is part of changing the background.
+    if (parsed) kinds.add(parsed.kind === 'picture' ? 'appearance' : parsed.kind);
   }
   return [...kinds];
 }

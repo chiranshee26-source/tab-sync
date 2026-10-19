@@ -144,6 +144,11 @@ const en = {
   onThisDayMonth: "A month ago today",
   onThisDayYear: "A year ago today",
   wordCount: "{count} words",
+  savedPictures: "Your pictures",
+  savedPicturesHint: "Every picture you use is kept here. Pick one to switch back to it.",
+  usePicture: "Use this picture",
+  currentPicture: "In use",
+  removePicture: "Remove from your pictures",
 };
 
 export type MessageKey = keyof typeof en;
@@ -292,6 +297,11 @@ const catalogs: Record<Language, Catalog> = {
     onThisDayMonth: "Hace un mes",
     onThisDayYear: "Hace un año",
     wordCount: "{count} palabras",
+    savedPictures: "Tus imágenes",
+    savedPicturesHint: "Aquí se guardan las imágenes que usas. Elige una para volver a ella.",
+    usePicture: "Usar esta imagen",
+    currentPicture: "En uso",
+    removePicture: "Quitar de tus imágenes",
   },
   fr: {
     navToday: "Aujourd’hui",
@@ -434,6 +444,11 @@ const catalogs: Record<Language, Catalog> = {
     onThisDayMonth: "Il y a un mois",
     onThisDayYear: "Il y a un an",
     wordCount: "{count} mots",
+    savedPictures: "Vos images",
+    savedPicturesHint: "Chaque image utilisée est conservée ici. Choisissez-en une pour y revenir.",
+    usePicture: "Utiliser cette image",
+    currentPicture: "Utilisée",
+    removePicture: "Retirer de vos images",
   },
   de: {
     navToday: "Heute",
@@ -576,6 +591,11 @@ const catalogs: Record<Language, Catalog> = {
     onThisDayMonth: "Heute vor einem Monat",
     onThisDayYear: "Heute vor einem Jahr",
     wordCount: "{count} Wörter",
+    savedPictures: "Deine Bilder",
+    savedPicturesHint: "Jedes verwendete Bild wird hier aufbewahrt. Wähle eines, um zurückzuwechseln.",
+    usePicture: "Dieses Bild verwenden",
+    currentPicture: "Aktiv",
+    removePicture: "Aus deinen Bildern entfernen",
   },
   hi: {
     navToday: "आज",
@@ -718,6 +738,11 @@ const catalogs: Record<Language, Catalog> = {
     onThisDayMonth: "एक महीने पहले आज",
     onThisDayYear: "एक साल पहले आज",
     wordCount: "{count} शब्द",
+    savedPictures: "आपकी तस्वीरें",
+    savedPicturesHint: "आपकी इस्तेमाल की गई हर तस्वीर यहाँ रखी जाती है। वापस जाने के लिए कोई एक चुनें।",
+    usePicture: "यह तस्वीर इस्तेमाल करें",
+    currentPicture: "इस्तेमाल में",
+    removePicture: "आपकी तस्वीरों से हटाएँ",
   },
   ja: {
     navToday: "今日",
@@ -860,6 +885,11 @@ const catalogs: Record<Language, Catalog> = {
     onThisDayMonth: "1か月前の今日",
     onThisDayYear: "1年前の今日",
     wordCount: "{count}語",
+    savedPictures: "あなたの画像",
+    savedPicturesHint: "使った画像はここに保存されます。選ぶとその画像に戻せます。",
+    usePicture: "この画像を使う",
+    currentPicture: "使用中",
+    removePicture: "画像一覧から削除",
   },
   ar: {
     navToday: "اليوم",
@@ -1002,6 +1032,11 @@ const catalogs: Record<Language, Catalog> = {
     onThisDayMonth: "قبل شهر من اليوم",
     onThisDayYear: "قبل عام من اليوم",
     wordCount: "{count} كلمة",
+    savedPictures: "صورك",
+    savedPicturesHint: "تُحفظ هنا كل صورة تستخدمها. اختر واحدة للعودة إليها.",
+    usePicture: "استخدام هذه الصورة",
+    currentPicture: "قيد الاستخدام",
+    removePicture: "إزالة من صورك",
   },
 };
 

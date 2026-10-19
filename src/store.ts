@@ -195,7 +195,7 @@ export class SyncedStore {
     this.write(recordKey(kind, id), fields as Record<string, unknown>);
   }
 
-  remove(kind: 'task' | 'reading' | 'note', id: string): void {
+  remove(kind: 'task' | 'reading' | 'note' | 'picture', id: string): void {
     this.update(kind, id, { deleted: true });
   }
 

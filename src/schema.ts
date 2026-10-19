@@ -53,6 +53,16 @@ export interface Appearance {
   palette: string;
 }
 
+/**
+ * A picture the user has used as background, kept so they can switch back
+ * to it later. The record id is the picture's content hash (its IndexedDB key).
+ */
+export interface SavedPicture {
+  palette: string;
+  addedAt: number;
+  deleted: boolean;
+}
+
 /** One entry per day; the record id is the date, so tabs writing "today" share it. */
 export interface DiaryEntry {
   body: string;
@@ -63,6 +73,7 @@ export interface DiaryEntry {
 export interface RecordTypes {
   prefs: Preferences;
   appearance: Appearance;
+  picture: SavedPicture;
   task: Task;
   reading: ReadingItem;
   note: Note;
@@ -87,6 +98,9 @@ const oneOf =
 const isoDateOrEmpty: Validator<string> = (v): v is string =>
   typeof v === 'string' && (v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v));
 
+const isPalette: Validator<string> = (v): v is string =>
+  typeof v === 'string' && /^(#[0-9a-f]{6}(,#[0-9a-f]{6}){0,7})?$/.test(v);
+
 type Schema<T> = { readonly [F in keyof T]: Validator<T[F]> };
 
 export const SCHEMAS: { readonly [K in Kind]: Schema<RecordTypes[K]> } = {
@@ -101,10 +115,8 @@ export const SCHEMAS: { readonly [K in Kind]: Schema<RecordTypes[K]> } = {
   },
   note: { title: text(500), body: text(200_000), createdAt: time, updatedAt: time, deleted: bool },
   diary: { body: text(200_000), mood: oneOf<Mood | ''>(['', ...MOODS]), updatedAt: time },
-  appearance: {
-    image: (v): v is string => typeof v === 'string' && /^([0-9a-f]{16})?$/.test(v),
-    palette: (v): v is string => typeof v === 'string' && /^(#[0-9a-f]{6}(,#[0-9a-f]{6}){0,7})?$/.test(v),
-  },
+  appearance: { image: (v): v is string => typeof v === 'string' && /^([0-9a-f]{16})?$/.test(v), palette: isPalette },
+  picture: { palette: isPalette, addedAt: time, deleted: bool },
 };
 
 /** Values for fields nobody has written yet. */
@@ -114,6 +126,7 @@ export const ITEM_DEFAULTS: { readonly [K in ItemKind]: RecordTypes[K] } = {
   note: { title: '', body: '', createdAt: 0, updatedAt: 0, deleted: false },
   diary: { body: '', mood: '', updatedAt: 0 },
   appearance: { image: '', palette: '' },
+  picture: { palette: '', addedAt: 0, deleted: false },
 };
 
 const KINDS = Object.keys(SCHEMAS) as Kind[];
