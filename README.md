@@ -9,7 +9,17 @@ A TypeScript web app that keeps user preferences (dark mode, language, font size
 - Preferences **persist** in `localStorage` and are restored on reopen
 - **No flash of the wrong theme**: an inline boot script applies saved settings before the first paint
 - **Deterministic conflict resolution**: a per-field Last-Writer-Wins CRDT ordered by Hybrid Logical Clocks
-- Built-in **concurrent-edit test**: every open tab makes random edits at the same instant, and the state fingerprints still match
+- Built-in **concurrent-edit test**: every open tab makes conflicting edits at the same instant, and they all still converge
+- **Self-healing**: tabs compare state fingerprints on every heartbeat and repair any divergence automatically
+
+### User experience
+
+- **Live sync status**: "All tabs in sync" (green), "Syncing…" (amber) or "Only this tab is open" (with a prompt to open another), in the header and the sync panel
+- **Remote-change feedback**: when another tab changes a setting, a toast says which tab changed what, and the affected control briefly highlights. Slider drags update a single toast instead of stacking
+- **Colour-coded tabs**: each tab gets a stable colour, used in the tab list, activity log, toasts and field clocks
+- **Polished controls**: sun/moon switch, styled language picker, font slider with −/+ buttons and A/A scale, one-click **Reset to defaults**, and a live preview card
+- **Progressive disclosure**: fingerprint, transport and per-field clocks sit in a collapsible "Technical details" section
+- **Accessible and responsive**: keyboard and screen-reader friendly (`role="switch"`, live regions, labelled buttons), right-to-left layout for Arabic, phone-sized layouts, `prefers-reduced-motion` respected
 
 No framework, no runtime dependencies: Vite + TypeScript (strict). Vitest for unit tests, Playwright for multi-tab end-to-end tests.
 
@@ -70,6 +80,7 @@ Several mechanisms make delivery robust:
 - **Anti-entropy.** Every tab also listens for `storage` events, a second, independent path, so a missed broadcast is repaired the next time any tab persists.
 - **Resync.** On `visibilitychange` and bfcache restore (`pageshow` with `persisted`), the tab re-reads storage and re-announces itself.
 - **Presence.** Heartbeats every second, plus `bye` on `pagehide`, drive the open-tabs counter.
+- **Convergence check and self-repair.** Every message carries the sender's state fingerprint. A tab that applies a remote change acknowledges at once with its new fingerprint, so each tab knows whether its peers have converged (that drives the "All tabs in sync" indicator). If a heartbeat reveals a mismatch, the tab replies with its full state. A tab that receives a state lacking something it has sends its own state back once. After that exchange both hold the join of the two states, so the repair always terminates.
 
 All incoming data (messages and storage) is validated field by field. Unknown or corrupt fields are dropped individually, so a tab running an older build, or a hand-edited `localStorage`, cannot break the others.
 
@@ -93,8 +104,8 @@ Defaults (system color scheme, browser language) carry the zero timestamp, so an
 
 ## Tests
 
-- **Unit (Vitest, 19 tests):** HLC monotonicity and causality; merge laws (randomized); delivery-order convergence; validation of corrupt input; store-level propagation, persistence, handshake, skewed clocks, conflict reporting and presence.
-- **End-to-end (Playwright, real Chromium tabs sharing one browser context):** cross-tab propagation under 100 ms; language/RTL/font-size sync through the UI; persistence after closing every tab; no wrong-theme paint on a new tab; four tabs converging after the concurrent-edit test.
+- **Unit (Vitest, 21 tests):** HLC monotonicity and causality; merge laws (randomized); delivery-order convergence; validation of corrupt input; store-level propagation, persistence, handshake, skewed clocks, conflict reporting, presence, reset, and self-repair after a dropped message.
+- **End-to-end (Playwright, 8 tests with real Chromium tabs sharing one browser context):** cross-tab propagation under 100 ms; language/RTL/font-size sync through the UI; persistence after closing every tab; no wrong-theme paint on a new tab; four tabs converging after the concurrent-edit test; toast, highlight and "in sync" status; reset across tabs; the single-tab prompt.
 
 ## Deployment
 

@@ -173,6 +173,43 @@ describe('SyncedPreferences', () => {
     b.stop();
   });
 
+  it('reports whether peers have converged, and repairs a dropped update via heartbeat', async () => {
+    vi.useFakeTimers();
+    const net = new Network();
+    net.autoDeliver = false;
+    const a = openTab(net, 'a');
+    const b = openTab(net, 'b');
+    net.flush();
+    expect(a.peerStates).toEqual([{ id: 'b', inSync: true }]);
+
+    a.set('theme', 'dark');
+    net.queue = []; // the update is lost in transit
+    expect(b.values.theme).toBe('light');
+    expect(a.peerStates).toEqual([{ id: 'b', inSync: false }]);
+
+    net.autoDeliver = true;
+    vi.advanceTimersByTime(1000); // next heartbeat exposes the fingerprint mismatch
+    await Promise.resolve();
+    expect(b.values.theme).toBe('dark');
+    expect(a.peerStates).toEqual([{ id: 'b', inSync: true }]);
+    expect(b.peerStates).toEqual([{ id: 'a', inSync: true }]);
+    a.stop();
+    b.stop();
+  });
+
+  it('reset() restores defaults as a synced edit', () => {
+    const net = new Network();
+    const a = openTab(net, 'a');
+    const b = openTab(net, 'b');
+    a.set('fontSize', 22);
+    a.set('theme', 'dark');
+    b.reset();
+    expect(a.values).toEqual(DEFAULTS);
+    expect(b.values).toEqual(DEFAULTS);
+    a.stop();
+    b.stop();
+  });
+
   it('tracks peers joining and leaving', () => {
     const net = new Network();
     const a = openTab(net, 'a');

@@ -12,6 +12,8 @@ interface Envelope {
   from: string;
   /** Sender's high-resolution epoch time in ms, used to measure latency. */
   sentAt: number;
+  /** Fingerprint of the sender's state after this message, for convergence checks. */
+  fp?: string;
 }
 
 export type SyncMessage = Envelope &
@@ -38,7 +40,11 @@ export function parseMessage(raw: unknown): SyncMessage | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const m = raw as Record<string, unknown>;
   if (typeof m.from !== 'string' || typeof m.sentAt !== 'number' || !Number.isFinite(m.sentAt)) return null;
-  const envelope = { from: m.from, sentAt: m.sentAt };
+  const envelope = {
+    from: m.from,
+    sentAt: m.sentAt,
+    fp: typeof m.fp === 'string' && m.fp.length <= 16 ? m.fp : undefined,
+  };
   if (typeof m.type !== 'string') return null;
   if (SIMPLE_TYPES.has(m.type)) return { ...envelope, type: m.type as 'hello' | 'heartbeat' | 'bye' };
   if (m.type === 'update' || m.type === 'state') {

@@ -100,16 +100,61 @@ test('a newly opened tab never paints the wrong theme', async ({ context }) => {
 
 test('simultaneous edits from many tabs converge to one state', async ({ context }) => {
   const tabs = await openTabs(context, 4);
+  const fingerprints = () => Promise.all(tabs.map((t) => t.getByTestId('fingerprint').textContent()));
+  const before = await fingerprints();
+  for (const t of tabs) {
+    await t.evaluate(() => {
+      window.tabSync.subscribe((e) => {
+        if (e.type === 'change' && e.source === 'local') (window as unknown as { raced: boolean }).raced = true;
+      });
+    });
+  }
   await tabs[0].getByRole('button', { name: /concurrent-edit/i }).click();
 
+  // The edits fire ~400 ms after the click; wait until every tab has made its own.
+  await Promise.all(tabs.map((t) => t.waitForFunction(() => (window as unknown as { raced?: boolean }).raced)));
+  expect(await fingerprints()).not.toEqual(before);
+
   await expect
-    .poll(async () => new Set(await Promise.all(tabs.map((t) => t.getByTestId('fingerprint').textContent()))).size, {
-      timeout: 5000,
-    })
+    .poll(async () => new Set(await fingerprints()).size, { timeout: 5000 })
     .toBe(1);
   const values = await Promise.all(tabs.map((t) => t.evaluate(() => window.tabSync.values)));
   for (const v of values) expect(v).toEqual(values[0]);
   // Storage holds the converged state as well.
   const [fresh] = await openTabs(context, 1);
   expect(await fresh.evaluate(() => window.tabSync.values)).toEqual(values[0]);
+});
+
+test('other tabs get a toast, a highlight and an "in sync" status', async ({ context }) => {
+  const [a, b] = await openTabs(context, 2);
+  await a.selectOption('#language', 'en');
+  const aId = await a.evaluate(() => window.tabSync.tabId);
+
+  await a.getByRole('button', { name: 'Larger text' }).click();
+  await expect(b.locator('.toast')).toContainText(`Tab ${aId} changed Font size`);
+  await expect(b.locator('[data-setting="fontSize"]')).toHaveClass(/flash/);
+  await expect(a.getByRole('status').first()).toContainText('All tabs in sync');
+  await expect(b.locator('.status-hero')).toHaveAttribute('data-state', 'synced');
+
+  await b.locator('.toast-close').first().click();
+  await expect(b.locator('.toast')).toHaveCount(0);
+});
+
+test('reset restores defaults in every tab', async ({ context }) => {
+  const [a, b] = await openTabs(context, 2);
+  const defaults = await a.evaluate(() => window.tabSync.values);
+  await a.evaluate(() => {
+    window.tabSync.set('fontSize', 22);
+    window.tabSync.set('language', 'de');
+  });
+  await expect(b.locator('#font-size')).toHaveValue('22');
+  await b.getByRole('button', { name: 'Zurücksetzen' }).click();
+  await expect.poll(() => a.evaluate(() => window.tabSync.values)).toEqual(defaults);
+});
+
+test('a lone tab invites the user to open another one', async ({ context }) => {
+  const [a] = await openTabs(context, 1);
+  await a.evaluate(() => window.tabSync.set('language', 'en'));
+  await expect(a.locator('.status-hero')).toHaveAttribute('data-state', 'alone');
+  await expect(a.locator('.status-hero')).toContainText('Open the app in a second tab');
 });

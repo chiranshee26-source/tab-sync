@@ -6,23 +6,42 @@
  *
  * New tabs announce themselves with `hello`; peers answer with their full
  * `state`, which covers any update still in flight to localStorage. Storage
- * `storage` events act as a second, independent path (anti-entropy), so a
- * missed broadcast is repaired as soon as any tab persists.
+ * `storage` events act as a second, independent path, so a missed broadcast
+ * is repaired as soon as any tab persists.
+ *
+ * Every message carries the sender's state fingerprint. A tab that sees a
+ * fingerprint different from its own on a heartbeat answers with its full
+ * state, so tabs that diverged (e.g. a dropped message) repair themselves,
+ * and the UI can show whether all tabs have converged.
  */
 
 import { HybridLogicalClock, type Timestamp } from './clock';
-import { createDoc, merge, valuesOf, type MergeResult, type PartialDoc, type PrefsDoc } from './lww';
+import {
+  createDoc,
+  fingerprint,
+  merge,
+  valuesOf,
+  type MergeResult,
+  type PartialDoc,
+  type PrefsDoc,
+} from './lww';
 import type { Persistence } from './persistence';
-import { FONT_SIZE, LANGUAGES, THEMES, type PrefKey, type Preferences } from './preferences';
+import { FONT_SIZE, LANGUAGES, PREF_KEYS, THEMES, type PrefKey, type Preferences } from './preferences';
 import type { SyncMessage, Transport } from './transport';
 
 export type ChangeSource = 'local' | 'remote' | 'storage';
+
+export interface PeerState {
+  id: string;
+  /** True when the peer's last reported state equals ours. */
+  inSync: boolean;
+}
 
 export type StoreEvent =
   | { type: 'change'; values: Preferences; keys: PrefKey[]; source: ChangeSource; from?: string }
   | { type: 'conflict'; keys: PrefKey[]; from: string }
   | { type: 'latency'; ms: number; from: string }
-  | { type: 'peers'; peers: string[]; joined: string[]; left: string[] }
+  | { type: 'peers'; peers: PeerState[]; joined: string[]; left: string[] }
   | { type: 'race'; at: number; from: string };
 
 export interface StoreOptions {
@@ -36,6 +55,11 @@ export interface StoreOptions {
   heartbeatMs?: number;
 }
 
+interface Peer {
+  lastSeen: number;
+  fp?: string;
+}
+
 const PEER_TIMEOUT_FACTOR = 3.5;
 export const RACE_DELAY_MS = 400;
 
@@ -44,12 +68,13 @@ export class SyncedPreferences {
   private doc: PrefsDoc;
   private readonly clock: HybridLogicalClock;
   private readonly listeners = new Set<(event: StoreEvent) => void>();
-  private readonly peers = new Map<string, number>();
+  private readonly peers = new Map<string, Peer>();
   private readonly epochNow: () => number;
   private readonly random: () => number;
   private readonly heartbeatMs: number;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private persistQueued = false;
+  private ackQueued = false;
 
   constructor(private readonly options: StoreOptions) {
     this.tabId = options.tabId;
@@ -70,8 +95,17 @@ export class SyncedPreferences {
     return this.doc;
   }
 
+  get fingerprint(): string {
+    return fingerprint(this.doc);
+  }
+
   get peerIds(): string[] {
     return [...this.peers.keys()];
+  }
+
+  get peerStates(): PeerState[] {
+    const own = this.fingerprint;
+    return [...this.peers].map(([id, peer]) => ({ id, inSync: peer.fp === own }));
   }
 
   get transportKind(): string {
@@ -114,6 +148,11 @@ export class SyncedPreferences {
     this.schedulePersist();
   }
 
+  /** Restores the defaults as a regular (synced, timestamped) edit. */
+  reset(): void {
+    for (const key of PREF_KEYS) this.set(key, this.options.defaults[key]);
+  }
+
   /** Asks every tab (including this one) to make random edits at the same instant. */
   startRace(): void {
     const at = this.epochNow() + RACE_DELAY_MS;
@@ -123,7 +162,7 @@ export class SyncedPreferences {
 
   private receive(message: SyncMessage): void {
     if (message.from === this.tabId) return;
-    this.touchPeer(message.from);
+    this.touchPeer(message.from, message.fp);
     switch (message.type) {
       case 'hello':
         this.post({ type: 'state', entries: this.doc });
@@ -137,11 +176,15 @@ export class SyncedPreferences {
         break;
       case 'state':
         this.applyMerge(this.absorbFrom(message.entries), 'remote', message.from);
+        // The sender lacks something we have: send it back once. After that
+        // both sides hold the join of the two states, so this cannot loop.
+        if (message.fp && message.fp !== this.fingerprint) this.post({ type: 'state', entries: this.doc });
+        break;
+      case 'heartbeat':
+        if (message.fp && message.fp !== this.fingerprint) this.post({ type: 'state', entries: this.doc });
         break;
       case 'race':
         this.runRace(message.at, message.from);
-        break;
-      case 'heartbeat':
         break;
     }
   }
@@ -162,7 +205,20 @@ export class SyncedPreferences {
     const changed = result.accepted.filter((key) => before[key].value !== result.doc[key].value);
     if (changed.length > 0) this.emit({ type: 'change', values: this.values, keys: changed, source, from });
     if (result.rejected.length > 0 && from) this.emit({ type: 'conflict', keys: result.rejected, from });
-    if (result.accepted.length > 0) this.schedulePersist();
+    if (result.accepted.length > 0) {
+      this.schedulePersist();
+      this.scheduleAck();
+    }
+  }
+
+  /** Tells peers our new fingerprint right away, so their sync indicator settles fast. */
+  private scheduleAck(): void {
+    if (this.ackQueued) return;
+    this.ackQueued = true;
+    queueMicrotask(() => {
+      this.ackQueued = false;
+      this.post({ type: 'heartbeat' });
+    });
   }
 
   /** Coalesces bursts (e.g. slider drags) into one storage write per task. */
@@ -181,22 +237,33 @@ export class SyncedPreferences {
   private runRace(at: number, from: string): void {
     this.emit({ type: 'race', at, from });
     setTimeout(() => {
-      const pick = <T>(items: readonly T[]) => items[Math.floor(this.random() * items.length)];
-      const span = FONT_SIZE.max - FONT_SIZE.min;
-      this.set('fontSize', FONT_SIZE.min + Math.round(this.random() * span));
-      this.set('language', pick(LANGUAGES));
-      this.set('theme', pick(THEMES));
+      // Always pick a value different from the current one, so every tab really edits.
+      const pickOther = <T>(items: readonly T[], current: T) => {
+        const others = items.filter((item) => item !== current);
+        return others[Math.floor(this.random() * others.length)];
+      };
+      const sizes = Array.from({ length: FONT_SIZE.max - FONT_SIZE.min + 1 }, (_, i) => FONT_SIZE.min + i);
+      const { fontSize, language, theme } = this.values;
+      this.set('fontSize', pickOther(sizes, fontSize));
+      this.set('language', pickOther(LANGUAGES, language));
+      this.set('theme', pickOther(THEMES, theme));
     }, Math.max(0, at - this.epochNow()));
   }
 
-  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt'>): void {
-    this.options.transport.post({ ...body, from: this.tabId, sentAt: this.epochNow() } as SyncMessage);
+  private post(body: DistributiveOmit<SyncMessage, 'from' | 'sentAt' | 'fp'>): void {
+    this.options.transport.post({
+      ...body,
+      from: this.tabId,
+      sentAt: this.epochNow(),
+      fp: this.fingerprint,
+    } as SyncMessage);
   }
 
-  private touchPeer(id: string): void {
-    const isNew = !this.peers.has(id);
-    this.peers.set(id, this.epochNow());
-    if (isNew) this.emitPeers([id], []);
+  private touchPeer(id: string, fp: string | undefined): void {
+    const previous = this.peers.get(id);
+    this.peers.set(id, { lastSeen: this.epochNow(), fp: fp ?? previous?.fp });
+    if (!previous) this.emitPeers([id], []);
+    else if (fp && fp !== previous.fp) this.emitPeers([], []);
   }
 
   private dropPeer(id: string): void {
@@ -205,13 +272,13 @@ export class SyncedPreferences {
 
   private prunePeers(): void {
     const cutoff = this.epochNow() - this.heartbeatMs * PEER_TIMEOUT_FACTOR;
-    const left = [...this.peers].filter(([, seen]) => seen < cutoff).map(([id]) => id);
+    const left = [...this.peers].filter(([, peer]) => peer.lastSeen < cutoff).map(([id]) => id);
     for (const id of left) this.peers.delete(id);
     if (left.length > 0) this.emitPeers([], left);
   }
 
   private emitPeers(joined: string[], left: string[]): void {
-    this.emit({ type: 'peers', peers: this.peerIds, joined, left });
+    this.emit({ type: 'peers', peers: this.peerStates, joined, left });
   }
 
   private emit(event: StoreEvent): void {
